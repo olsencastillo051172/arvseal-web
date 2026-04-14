@@ -1,13 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { verifyMerkleProof, VerificationResult } from '../../lib/rva/verifier';
+
+type ProofStep =
+  | string
+  | {
+      sibling: string;
+      direction: 'left' | 'right';
+    };
 
 type Attestation = {
   document_hash: string;
-  merkle_proof: Array<{ sibling: string; direction: 'left' | 'right' }> | string[];
+  merkle_proof: ProofStep[];
   expected_root: string;
 };
+
+const ACTIVE_VALIDATION_ID = 'ARV-2026-000006';
 
 export default function DemoClient() {
   const [airgap, setAirgap] = useState(false);
@@ -18,13 +27,15 @@ export default function DemoClient() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const originalFetch = window.fetch;
+    const originalFetch = window.fetch.bind(window);
     const OriginalXHR = window.XMLHttpRequest;
     const originalBeacon = navigator.sendBeacon?.bind(navigator);
 
     const intercept = () => {
       if (airgap) {
-        throw new Error('SECURITY_EXCEPTION: NETWORK_ACCESS_DENIED_BY_AIRGAP_POLICY');
+        throw new Error(
+          'SECURITY_EXCEPTION: NETWORK_ACCESS_DENIED_BY_AIRGAP_POLICY'
+        );
       }
       setNetCount((prev) => prev + 1);
     };
@@ -37,7 +48,8 @@ export default function DemoClient() {
     class PatchedXHR extends OriginalXHR {
       send(...args: any[]) {
         intercept();
-        super.send(...args);
+        // @ts-ignore
+        return super.send(...args);
       }
     }
 
@@ -54,6 +66,7 @@ export default function DemoClient() {
 
     return () => {
       window.fetch = originalFetch;
+      // @ts-ignore
       window.XMLHttpRequest = OriginalXHR;
       if (originalBeacon) {
         // @ts-ignore
@@ -63,15 +76,34 @@ export default function DemoClient() {
   }, [airgap]);
 
   const loadAnchor = async () => {
+    if (airgap) {
+      setErrorMsg('Anchor loading is disabled while AIR-GAP is enabled.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
     setResult(null);
 
     try {
       const res = await fetch('/anchor.json', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
       const data = await res.json();
-      setJsonInput(JSON.stringify(data, null, 2));
+
+      setJsonInput(
+        JSON.stringify(
+          {
+            document_hash: data.target ?? '',
+            merkle_proof: data.proof ?? [],
+            expected_root: data.expectedRoot ?? '',
+          },
+          null,
+          2
+        )
+      );
     } catch (e: any) {
       setErrorMsg(`Could not load anchor.json: ${String(e?.message ?? e)}`);
     } finally {
@@ -123,20 +155,34 @@ export default function DemoClient() {
                 typeof item.sibling === 'string' &&
                 (item.direction === 'left' || item.direction === 'right')
               ) {
-                return item;
+                if (!hex64.test(item.sibling)) {
+                  throw new Error('Malformed sibling hash inside merkle_proof.');
+                }
+                return {
+                  sibling: item.sibling.toLowerCase(),
+                  direction: item.direction,
+                };
               }
+
+              if (typeof item === 'string') {
+                if (!hex64.test(item)) {
+                  throw new Error('Malformed string proof step inside merkle_proof.');
+                }
+                return item.toLowerCase();
+              }
+
               throw new Error('Unsupported merkle_proof format.');
             });
 
       const verification = await verifyMerkleProof(
-        data.document_hash,
+        data.document_hash.toLowerCase(),
         normalizedProof as any,
-        data.expected_root
+        data.expected_root.toLowerCase()
       );
 
       setResult(verification);
     } catch (e: any) {
-      setErrorMsg(e.message || 'Unknown Integrity Error');
+      setErrorMsg(String(e?.message ?? 'Unknown Integrity Error'));
     } finally {
       setLoading(false);
     }
@@ -145,7 +191,7 @@ export default function DemoClient() {
   const handleCertificate = async () => {
     try {
       window.open(
-        '/vault/clients/CLIENT-001/certificates/ARV-2026-000001.certificate.html',
+        `/certificate?id=${ACTIVE_VALIDATION_ID}`,
         '_blank',
         'noopener,noreferrer'
       );
@@ -155,20 +201,21 @@ export default function DemoClient() {
   };
 
   const handlePdfCertificate = async () => {
-    try {
-      window.open(
-        '/vault/clients/CLIENT-001/certificates/ARV-2026-000001.certificate.pdf',
-        '_blank',
-        'noopener,noreferrer'
-      );
-    } catch (e: any) {
-      setErrorMsg(`Could not open PDF certificate: ${e.message}`);
-    }
+    setErrorMsg(
+      `PDF certificate is not published in the public web repo for ${ACTIVE_VALIDATION_ID}.`
+    );
   };
 
   const handleExport = async () => {
+    if (airgap) {
+      setErrorMsg(
+        'Could not export evidence package: SECURITY_EXCEPTION: NETWORK_ACCESS_DENIED_BY_AIRGAP_POLICY'
+      );
+      return;
+    }
+
     try {
-      const url = '/vault/clients/CLIENT-001/exports/ARV-2026-000001.certificate.json';
+      const url = `/vault/records/${ACTIVE_VALIDATION_ID}.json`;
       const res = await fetch(url, { cache: 'no-store' });
 
       if (!res.ok) {
@@ -180,7 +227,7 @@ export default function DemoClient() {
 
       const a = document.createElement('a');
       a.href = href;
-      a.download = 'ARV-2026-000001.certificate.json';
+      a.download = `${ACTIVE_VALIDATION_ID}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -192,6 +239,13 @@ export default function DemoClient() {
   };
 
   const handleLedger = async () => {
+    if (airgap) {
+      setErrorMsg(
+        'Could not open public ledger: SECURITY_EXCEPTION: NETWORK_ACCESS_DENIED_BY_AIRGAP_POLICY'
+      );
+      return;
+    }
+
     try {
       window.open(
         '/vault/public-ledger/public-ledger.jsonl',
@@ -207,7 +261,7 @@ export default function DemoClient() {
     <div className="min-h-screen bg-black text-gray-300 font-mono p-8 max-w-4xl mx-auto">
       <header className="flex justify-between items-center border-b border-gray-800 pb-4 mb-8">
         <div>
-          <h1 className="text-2xl text-white font-bold tracking-tighter">ARV</h1>
+          <h1 className="text-2xl text-white font-bold tracking-tight">ARV</h1>
           <p className="text-xs text-gray-500 tracking-[0.25em] uppercase">
             Reality Validation Authority
           </p>
@@ -222,7 +276,10 @@ export default function DemoClient() {
               NET REQ: {netCount}
             </div>
             <div>
-              STATUS: {airgap ? 'SECURE (OFFLINE / AIR-GAPPED)' : 'CONNECTED VERIFICATION MODE'}
+              STATUS:{' '}
+              {airgap
+                ? 'SECURE (OFFLINE / AIR-GAPPED)'
+                : 'CONNECTED VERIFICATION MODE'}
             </div>
           </div>
 
@@ -306,7 +363,7 @@ export default function DemoClient() {
         <textarea
           value={jsonInput}
           onChange={(e) => setJsonInput(e.target.value)}
-          placeholder='{"document_hash":"...","merkle_proof":[],"expected_root":"..."}'
+          placeholder={'{"document_hash":"...","merkle_proof":[],"expected_root":"..."}'}
           className="w-full h-40 bg-gray-900 border border-gray-800 p-4 text-xs text-white focus:outline-none"
         />
 
@@ -372,7 +429,11 @@ export default function DemoClient() {
 
               <div className="bg-gray-950 p-3 border border-gray-800">
                 <strong className="text-gray-500 block mb-1">COMPUTED ROOT (EVIDENCE)</strong>
-                <span className={`break-all ${result.isValid ? 'text-gray-300' : 'text-red-500'}`}>
+                <span
+                  className={`break-all ${
+                    result.isValid ? 'text-gray-300' : 'text-red-500'
+                  }`}
+                >
                   {result.computedRoot}
                 </span>
               </div>
