@@ -1,0 +1,10 @@
+{
+  "document_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "merkle_proof": [
+    {
+      "sibling": "582c1f54f2d1f319d3cca55c1e4ed651bd468e2450d2356192f0d7d1d92f2f9d",
+      "direction": "right"
+    }
+  ],
+  "expected_root": "2ca5a155ddae9afd5fe25c6cf217748dadf8cee8767423f704eabb7fc553e1eb"
+}

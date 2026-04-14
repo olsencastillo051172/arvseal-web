@@ -1,0 +1,61 @@
+{
+  "validation_id": "ARV-2026-000006",
+  "status": "VALID",
+  "authority": "Reality Validation Authority",
+  "system": "A System by Intelligence Olsen",
+  "canon": "ARV Canon v1.0",
+  "epoch_id": "ARV-EPOCH-20260408",
+  "ledger_position": 6,
+  "issued_by": "Universidad Autónoma de Santo Domingo",
+  "institution": "Universidad Autónoma de Santo Domingo (UASD)",
+  "issued_for": "Juan Carlos Perez Rodriguez",
+  "document_type": "Academic Diploma",
+  "source_file": {
+    "path": "public-demo-source",
+    "filename": "UASD-diploma-source.pdf"
+  },
+  "certificate_artifact": {
+    "path": "/vault/artifacts/ARV-2026-000006.certificate.html",
+    "filename": "ARV-2026-000006.certificate.html"
+  },
+  "document_hash": "25d8128218671a0d63062198311352469f866aae59494fc29ea834c67e783325",
+  "merkle_root": "0e9e4471eb3305590e17afe2d87d1bfb2fe6631abf6f81a88cd8e3cc375a1242",
+  "signature": {
+    "algorithm": "Ed25519",
+    "value": "Ctyv4RX0PV2GFFgj6irFnoxjkzT27Cq7QsW5ghgAWh6SQ3qJC2da/taQBHTrD++84cWJLVK3H3+6wzZogqPwAw==",
+    "public_key_fingerprint": "122e08b7a7b4039cd79ea09e"
+  },
+  "dual_seal": {
+    "mode": "ARV-DUAL-SEAL-v1",
+    "primary_seal_hash": "ef7c7d79cd793e93c9654abba678a1995f880e00bdae2ad270f7f718dd05eb33",
+    "secondary_seal_hash": "92b71d3efa49d1ca6a986698ea662743aaa78f2353195f67284accc46baf5279"
+  },
+  "qr": {
+    "payload": "{\"id\":\"ARV-2026-000006\",\"verify\":\"https://arvseal.com/verify?id=ARV-2026-000006\",\"sig\":\"Ctyv4RX0PV2GFFgj6irFnoxjkzT27Cq7QsW5ghgAWh6SQ3qJC2da/taQBHTrD++84cWJLVK3H3+6wzZogqPwAw==\"}",
+    "signed": true,
+    "signature": "Ctyv4RX0PV2GFFgj6irFnoxjkzT27Cq7QsW5ghgAWh6SQ3qJC2da/taQBHTrD++84cWJLVK3H3+6wzZogqPwAw==",
+    "image_path": "/vault/qr/ARV-2026-000006.png"
+  },
+  "zk_proof": {
+    "type": null,
+    "value": null
+  },
+  "verification_url": "https://arvseal.com/verify?id=ARV-2026-000006",
+  "timestamp_utc": "2026-04-08T23:07:23.048Z",
+  "leaf_index": 5,
+  "epoch_size": 6,
+  "merkle_proof": [
+    {
+      "sibling": "25d8128218671a0d63062198311352469f866aae59494fc29ea834c67e783325",
+      "direction": "left"
+    },
+    {
+      "sibling": "5cbb8c7b6626cd5cd374b22e76f7c1de130169170bd6fbc78c2dc9af5f47c5b0",
+      "direction": "right"
+    },
+    {
+      "sibling": "fbd6c061a47faf52d047e128d2e165b5bdae407f282dab8193e559ac22468a66",
+      "direction": "left"
+    }
+  ]
+}
