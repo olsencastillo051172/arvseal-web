@@ -50,7 +50,13 @@ export type ValidationRecord = {
 export function loadRecord(id?: string): ValidationRecord | null {
   if (!id) return null;
 
-  const filePath = path.join(process.cwd(), "data", `${id}.json`);
+  const filePath = path.join(
+    process.cwd(),
+    "public",
+    "vault",
+    "records",
+    `${id}.json`
+  );
 
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
