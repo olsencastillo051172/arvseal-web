@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+import fs from 'fs';
+import path from 'path';
 
 export type ValidationRecord = {
   validation_id: string;
@@ -47,19 +47,26 @@ export type ValidationRecord = {
   timestamp_utc: string;
 };
 
+const RECORDS_BASE = path.join(process.cwd(), 'public', 'vault', 'records');
+
+function isValidId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
 export function loadRecord(id?: string): ValidationRecord | null {
   if (!id) return null;
+  if (!isValidId(id)) return null;
 
-  const filePath = path.join(
-    process.cwd(),
-    "public",
-    "vault",
-    "records",
-    `${id}.json`
-  );
+  const filePath = path.join(RECORDS_BASE, `${id}.json`);
+  const resolvedPath = path.resolve(filePath);
+  const resolvedBase = path.resolve(RECORDS_BASE);
+
+  if (!resolvedPath.startsWith(resolvedBase + path.sep) && resolvedPath !== `${resolvedBase}\\${id}.json` && resolvedPath !== `${resolvedBase}/${id}.json`) {
+    return null;
+  }
 
   try {
-    const raw = fs.readFileSync(filePath, "utf-8");
+    const raw = fs.readFileSync(resolvedPath, 'utf-8');
     return JSON.parse(raw) as ValidationRecord;
   } catch {
     return null;

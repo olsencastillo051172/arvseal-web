@@ -1,0 +1,37 @@
+
+> arvseal-web@1.0.0 build
+> next build
+
+   Ôû▓ Next.js 14.1.0
+
+   Creating an optimized production build ...
+ Ô£ô Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/7) ...
+
+   Generating static pages (1/7) 
+
+   Generating static pages (3/7) 
+
+   Generating static pages (5/7) 
+
+ Ô£ô Generating static pages (7/7) 
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+Ôöî Ôùï /                                    137 B          84.5 kB
+Ôö£ Ôùï /_not-found                          882 B          85.2 kB
+Ôö£ ╬╗ /certificate                         178 B          89.5 kB
+Ôö£ Ôùï /demo                                227 kB          311 kB
+Ôöö ╬╗ /verify                              178 B          89.5 kB
++ First Load JS shared by all            84.3 kB
+  Ôö£ chunks/69-7a68b8c8bac088a2.js        28.9 kB
+  Ôö£ chunks/fd9d1056-5be4032601bc51de.js  53.4 kB
+  Ôöö other shared chunks (total)          2.06 kB
+
+
+Ôùï  (Static)   prerendered as static content
+╬╗  (Dynamic)  server-rendered on demand using Node.js
+

@@ -1,15 +1,9 @@
-import type {
-  ARVRecord,
-  AcademicCredentialRecord,
-  GigEvidenceRecord,
-  ComplianceAUFAMLRecord,
-} from './schemas';
-
-export type AnyARVRecord =
-  | ARVRecord
-  | AcademicCredentialRecord
-  | GigEvidenceRecord
-  | ComplianceAUFAMLRecord;
+// lib/rva/artifacts.ts
+import JSZip from 'jszip';
+import QRCode from 'qrcode';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import type { AnyARVRecord } from './schemas';
 
 export interface ARVVerificationPayload {
   id: string;
@@ -32,29 +26,12 @@ export interface ARVEvidenceManifest {
   package_type: 'ARV Evidence Package';
   package_version: '1.0';
   exported_at_utc: string;
-  record_type:
-    | 'ARVRecord'
-    | 'AcademicCredentialRecord'
-    | 'GigEvidenceRecord'
-    | 'ComplianceAUFAMLRecord';
+  record_type: string;
   record_id: string;
   status: string;
   authority: string;
   canon: string;
   includes: string[];
-}
-
-export interface ARVEvidencePackage {
-  manifest: ARVEvidenceManifest;
-  record: AnyARVRecord;
-  verification: ARVVerificationPayload;
-  files: {
-    certificate_html_filename: string;
-    certificate_pdf_filename: string;
-    verification_filename: string;
-    manifest_filename: string;
-    record_filename: string;
-  };
 }
 
 function escapeHtml(value: string): string {
@@ -70,19 +47,6 @@ function pretty(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function getRecordType(record: AnyARVRecord): ARVEvidenceManifest['record_type'] {
-  if ('issuer_name' in record && 'institution_name' in record) {
-    return 'AcademicCredentialRecord';
-  }
-  if ('worker_name' in record && 'client_name' in record) {
-    return 'GigEvidenceRecord';
-  }
-  if ('regulated_entity_name' in record && 'compliance_framework' in record) {
-    return 'ComplianceAUFAMLRecord';
-  }
-  return 'ARVRecord';
-}
-
 function buildQRCodePayload(record: AnyARVRecord): string {
   return JSON.stringify({
     id: record.id,
@@ -96,10 +60,7 @@ function buildQRCodePayload(record: AnyARVRecord): string {
 }
 
 export function buildVerificationPayload(record: AnyARVRecord): ARVVerificationPayload {
-  const qr_payload = record.qr?.payload?.trim()
-    ? record.qr.payload
-    : buildQRCodePayload(record);
-
+  const qr_payload = record.qr?.payload?.trim() ? record.qr.payload : buildQRCodePayload(record);
   return {
     id: record.id,
     status: record.status,
@@ -123,33 +84,18 @@ export function buildEvidenceManifest(record: AnyARVRecord): ARVEvidenceManifest
     package_type: 'ARV Evidence Package',
     package_version: '1.0',
     exported_at_utc: new Date().toISOString(),
-    record_type: getRecordType(record),
+    record_type: 'GigEvidenceRecord',
     record_id: record.id,
     status: record.status,
     authority: record.authority,
     canon: record.canon,
     includes: [
-      'certificate.html',
-      'certificate.pdf',
-      'verification.json',
-      'manifest.json',
-      'record.json',
+      `${record.id}.certificate.html`,
+      `${record.id}.certificate.pdf`,
+      `${record.id}.verification.json`,
+      `${record.id}.manifest.json`,
+      `${record.id}.record.json`,
     ],
-  };
-}
-
-export function buildEvidencePackage(record: AnyARVRecord): ARVEvidencePackage {
-  return {
-    manifest: buildEvidenceManifest(record),
-    record,
-    verification: buildVerificationPayload(record),
-    files: {
-      certificate_html_filename: `${record.id}.certificate.html`,
-      certificate_pdf_filename: `${record.id}.certificate.pdf`,
-      verification_filename: `${record.id}.verification.json`,
-      manifest_filename: `${record.id}.manifest.json`,
-      record_filename: `${record.id}.record.json`,
-    },
   };
 }
 
@@ -171,7 +117,6 @@ function renderCommonIdentityBlock(record: AnyARVRecord): string {
 
 function renderCommonCryptoBlock(record: AnyARVRecord): string {
   const verification = buildVerificationPayload(record);
-
   return `
     <div class="section">
       <div class="section-title">Cryptographic Proof</div>
@@ -186,21 +131,7 @@ function renderCommonCryptoBlock(record: AnyARVRecord): string {
 }
 
 function renderVerticalBlock(record: AnyARVRecord): string {
-  if ('issuer_name' in record && 'institution_name' in record) {
-    return `
-      <div class="section">
-        <div class="section-title">Academic Metadata</div>
-        <div class="field"><div class="label">Issuer</div><div class="value">${escapeHtml(record.issuer_name)}</div></div>
-        <div class="field"><div class="label">Institution</div><div class="value">${escapeHtml(record.institution_name)}</div></div>
-        <div class="field"><div class="label">Holder</div><div class="value">${escapeHtml(record.holder_name)}</div></div>
-        <div class="field"><div class="label">Program</div><div class="value">${escapeHtml(record.program_name)}</div></div>
-        <div class="field"><div class="label">Award Type</div><div class="value">${escapeHtml(record.award_type)}</div></div>
-        <div class="field"><div class="label">Issue Date</div><div class="value">${escapeHtml(record.issue_date)}</div></div>
-      </div>
-    `;
-  }
-
-  if ('worker_name' in record && 'client_name' in record) {
+  if ('worker_name' in record) {
     return `
       <div class="section">
         <div class="section-title">Gig Evidence Metadata</div>
@@ -209,25 +140,9 @@ function renderVerticalBlock(record: AnyARVRecord): string {
         <div class="field"><div class="label">Project</div><div class="value">${escapeHtml(record.project_name)}</div></div>
         <div class="field"><div class="label">Deliverable Type</div><div class="value">${escapeHtml(record.deliverable_type)}</div></div>
         <div class="field"><div class="label">Delivery Date</div><div class="value">${escapeHtml(record.delivery_date)}</div></div>
-        <div class="field"><div class="label">Dispute Status</div><div class="value">${escapeHtml(record.dispute_status ?? 'N/A')}</div></div>
       </div>
     `;
   }
-
-  if ('regulated_entity_name' in record && 'compliance_framework' in record) {
-    return `
-      <div class="section">
-        <div class="section-title">Compliance Metadata</div>
-        <div class="field"><div class="label">Entity</div><div class="value">${escapeHtml(record.regulated_entity_name)}</div></div>
-        <div class="field"><div class="label">Framework</div><div class="value">${escapeHtml(record.compliance_framework)}</div></div>
-        <div class="field"><div class="label">Case Reference</div><div class="value">${escapeHtml(record.case_reference)}</div></div>
-        <div class="field"><div class="label">Evidence Type</div><div class="value">${escapeHtml(record.evidence_type)}</div></div>
-        <div class="field"><div class="label">Risk Level</div><div class="value">${escapeHtml(record.risk_level ?? 'N/A')}</div></div>
-        <div class="field"><div class="label">Jurisdiction</div><div class="value">${escapeHtml(record.jurisdiction ?? 'N/A')}</div></div>
-      </div>
-    `;
-  }
-
   return `
     <div class="section">
       <div class="section-title">Record Metadata</div>
@@ -239,7 +154,14 @@ function renderVerticalBlock(record: AnyARVRecord): string {
   `;
 }
 
-export function buildCertificateHtml(record: AnyARVRecord): string {
+export function buildCertificateHtml(record: AnyARVRecord, qrDataUrl?: string): string {
+  const localBanner = record.status === 'LOCAL_UNREGISTERED'
+    ? `<div class="notice-local">⚠ LOCAL EVIDENCE — NOT REGISTERED IN PUBLIC LEDGER</div>`
+    : '';
+  const verification = buildVerificationPayload(record);
+  const qrImageHtml = qrDataUrl
+    ? `<div style="text-align:center; margin: 8px 0;"><img src="${qrDataUrl}" width="160" height="160" alt="Verification QR" style="border:1px solid #ccc; border-radius:8px;" /></div>`
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -262,6 +184,7 @@ export function buildCertificateHtml(record: AnyARVRecord): string {
     .title{text-align:center;font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);font-weight:700}
     .subtitle{text-align:center;font-size:30px;margin:8px 0 12px}
     .note{text-align:center;max-width:760px;margin:0 auto 24px;color:var(--muted);font-size:14px;line-height:1.5}
+    .notice-local{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;line-height:1.4}
     .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
     .section{border:1px solid var(--line);border-radius:14px;padding:18px;background:#fff}
     .section-title{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -286,21 +209,23 @@ export function buildCertificateHtml(record: AnyARVRecord): string {
         <div class="v">${escapeHtml(record.status)}</div>
       </div>
     </div>
-
     <div class="paper">
       <div class="title">Cryptographic Integrity Certificate</div>
       <div class="subtitle">Portable Verification Record</div>
-      <div class="note">
-        This certificate confirms cryptographic integrity, temporal existence, and verification consistency.
-        It does not independently certify legal truth, authorship, or semantic truth of the content.
-      </div>
-
+      <div class="note">This certificate confirms cryptographic integrity, temporal existence, and verification consistency.</div>
+      ${localBanner}
       <div class="grid">
         ${renderCommonIdentityBlock(record)}
         ${renderCommonCryptoBlock(record)}
-        ${renderVerticalBlock(record)}
+        <div class="section">
+          <div class="section-title">Signed QR</div>
+          ${qrImageHtml}
+          <div class="field" style="margin-top:12px;">
+            <div class="label">Signed QR Payload</div>
+            <div class="mono" style="font-size:10px;">${escapeHtml(verification.qr_payload)}</div>
+          </div>
+        </div>
       </div>
-
       <div class="footer">
         <div>${escapeHtml(record.id)} · ${escapeHtml(record.canon)}</div>
         <div>ARV · A System by IO</div>
@@ -311,19 +236,54 @@ export function buildCertificateHtml(record: AnyARVRecord): string {
 </html>`;
 }
 
-export function buildCertificatePdfModel(record: AnyARVRecord): Record<string, unknown> {
-  return {
-    file_type: 'ARV Certificate PDF Model',
-    version: '1.0',
-    generated_at_utc: new Date().toISOString(),
-    record_id: record.id,
-    authority: record.authority,
-    system: record.system,
-    canon: record.canon,
-    status: record.status,
-    verification: buildVerificationPayload(record),
-    record_type: getRecordType(record),
-  };
+export async function buildQRImage(payload: string): Promise<string> {
+  return await QRCode.toDataURL(payload, { width: 200, margin: 1, errorCorrectionLevel: 'M' });
+}
+
+export async function buildCertificateHtmlWithQR(record: AnyARVRecord): Promise<string> {
+  const qrPayload = record.qr?.payload?.trim() || buildQRCodePayload(record);
+  const qrDataUrl = await buildQRImage(qrPayload);
+  return buildCertificateHtml(record, qrDataUrl);
+}
+
+export async function buildCertificatePdf(record: AnyARVRecord): Promise<Uint8Array> {
+  const html = await buildCertificateHtmlWithQR(record);
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.top = '-9999px';
+  container.style.left = '-9999px';
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  const rootElement = container.querySelector('.shell') as HTMLElement;
+  if (!rootElement) throw new Error('Missing .shell element');
+  const canvas = await html2canvas(rootElement, { scale: 2, backgroundColor: '#ffffff' });
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  let renderWidth = pageWidth;
+  let renderHeight = (canvas.height * renderWidth) / canvas.width;
+  if (renderHeight > pageHeight) {
+    renderHeight = pageHeight;
+    renderWidth = (canvas.width * renderHeight) / canvas.height;
+  }
+  const x = (pageWidth - renderWidth) / 2;
+  const y = 0;
+  pdf.addImage(imgData, 'PNG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+  document.body.removeChild(container);
+  const buffer = pdf.output('arraybuffer');
+  return new Uint8Array(buffer);
+}
+
+export async function buildEvidencePackageZip(record: AnyARVRecord): Promise<Uint8Array> {
+  const zip = new JSZip();
+  const htmlWithQR = await buildCertificateHtmlWithQR(record);
+  zip.file(`${record.id}.certificate.html`, htmlWithQR);
+  zip.file(`${record.id}.certificate.pdf`, await buildCertificatePdf(record));
+  zip.file(`${record.id}.verification.json`, buildPublicVerificationRecord(record));
+  zip.file(`${record.id}.manifest.json`, JSON.stringify(buildEvidenceManifest(record), null, 2));
+  zip.file(`${record.id}.record.json`, buildRecordJson(record));
+  return await zip.generateAsync({ type: 'uint8array' });
 }
 
 export function buildPublicVerificationRecord(record: AnyARVRecord): string {
@@ -332,12 +292,4 @@ export function buildPublicVerificationRecord(record: AnyARVRecord): string {
 
 export function buildRecordJson(record: AnyARVRecord): string {
   return pretty(record);
-}
-
-export function buildManifestJson(record: AnyARVRecord): string {
-  return pretty(buildEvidenceManifest(record));
-}
-
-export function buildEvidencePackageJson(record: AnyARVRecord): string {
-  return pretty(buildEvidencePackage(record));
 }

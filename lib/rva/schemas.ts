@@ -1,3 +1,6 @@
+// lib/rva/schemas.ts
+// Canonical schemas for ARV system - Phase 1
+
 export type ARVStatus =
   | 'LOCAL_UNREGISTERED'
   | 'REGISTERED'
@@ -99,7 +102,7 @@ export interface GigEvidenceRecord extends ARVRecord {
   dispute_status?: string | null;
 }
 
-export interface ComplianceAUFAMLRecord extends ARVRecord {
+export interface ComplianceUAFAMLRecord extends ARVRecord {
   regulated_entity_name: string;
   compliance_framework: string;
   case_reference: string;
@@ -114,4 +117,13 @@ export interface ComplianceAUFAMLRecord extends ARVRecord {
   reporting_period?: string | null;
   jurisdiction?: string | null;
   chain_of_custody_ref?: string | null;
+  regulated_authority?: 'UAF';
+  regulated_authority_full?: 'Unidad de Análisis Financiero';
+  compliance_domain?: 'AML';
 }
+
+export type AnyARVRecord =
+  | ARVRecord
+  | AcademicCredentialRecord
+  | GigEvidenceRecord
+  | ComplianceUAFAMLRecord;
