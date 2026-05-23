@@ -7,3 +7,8 @@ out/
 .env.test.local
 .env.production.local
 *.log
+build-output.txt
+arv-capability-inventory.txt
+*.bak-*
+*.bak
+.env.production
