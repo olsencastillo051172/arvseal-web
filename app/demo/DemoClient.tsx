@@ -5,6 +5,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { GigEvidenceRecord } from '@/lib/rva/schemas';
 import {
   buildKernelEvidencePackageZipFromFile,
+  buildKernelOfflineCertificateHtmlFromFile,
   buildQRImage,
   buildKernelPublicVerificationRecord,
   buildRecordJson,
@@ -227,11 +228,20 @@ const recordJson = record ? buildRecordJson(record) : '';
       setErrorMsg('Load a file first.');
       return;
     }
+
+    if (!sourceFile) {
+      setErrorMsg('Original source file is not available. Load the file again before viewing certificate.');
+      return;
+    }
+
+    setExporting(true);
     try {
-      const html = await buildCertificateHtmlWithQR(record);
+      const html = await buildKernelOfflineCertificateHtmlFromFile(record, sourceFile);
       openHtmlInNewTab(html);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Error generating certificate HTML');
+      setErrorMsg(err instanceof Error ? err.message : 'Error generating kernel certificate HTML');
+    } finally {
+      setExporting(false);
     }
   };
 
