@@ -194,6 +194,7 @@ const recordJson = record ? buildRecordJson(record) : '';
       const hash = await sha256Hex(file);
       const nextRecord = await buildLocalGigRecord(file, hash);
       setRecord(nextRecord);
+      setSourceFile(file);
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'Could not process file.');
     } finally {
