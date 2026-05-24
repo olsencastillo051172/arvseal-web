@@ -9,7 +9,7 @@ import {
   buildQRImage,
   buildKernelPublicVerificationRecord,
   buildRecordJson,
-  buildCertificatePdf,
+  buildKernelCertificatePdfFromFile,
   buildCertificateHtmlWithQR,
 } from '@/lib/rva/artifacts';
 import { createQrTransferPayload } from '@/lib/rva/kernel/qr-transfer-payload';
@@ -302,13 +302,23 @@ const recordJson = record ? buildRecordJson(record) : '';
       setErrorMsg('Load a file first.');
       return;
     }
+
+    if (!sourceFile) {
+      setErrorMsg('Original source file is not available. Load the file again before exporting PDF.');
+      return;
+    }
+
     setExporting(true);
     try {
-      const pdfBytes = await buildCertificatePdf(record);
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+      const pdfBytes = await buildKernelCertificatePdfFromFile(record, sourceFile);
+      const pdfBuffer = pdfBytes.buffer.slice(
+        pdfBytes.byteOffset,
+        pdfBytes.byteOffset + pdfBytes.byteLength,
+      ) as ArrayBuffer;
+      const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
       downloadBlob(blob, `${record.id}.certificate.pdf`);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Error generating PDF');
+      setErrorMsg(err instanceof Error ? err.message : 'Error generating kernel PDF');
     } finally {
       setExporting(false);
     }

@@ -290,6 +290,55 @@ export async function buildCertificatePdf(record: AnyARVRecord): Promise<Uint8Ar
   return new Uint8Array(buffer);
 }
 
+export async function buildKernelCertificatePdfFromFile(
+  record: AnyARVRecord,
+  sourceFile: File,
+): Promise<Uint8Array> {
+  const html = await buildKernelOfflineCertificateHtmlFromFile(record, sourceFile);
+
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.top = '-9999px';
+  container.style.left = '-9999px';
+  container.innerHTML = html;
+
+  document.body.appendChild(container);
+
+  try {
+    const rootElement = container.querySelector('.shell') as HTMLElement;
+    if (!rootElement) throw new Error('Missing .shell element');
+
+    const canvas = await html2canvas(rootElement, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+    });
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    let renderWidth = pageWidth;
+    let renderHeight = (canvas.height * renderWidth) / canvas.width;
+
+    if (renderHeight > pageHeight) {
+      renderHeight = pageHeight;
+      renderWidth = (canvas.width * renderHeight) / canvas.height;
+    }
+
+    const x = (pageWidth - renderWidth) / 2;
+    const y = 0;
+
+    pdf.addImage(imgData, 'PNG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+
+    const buffer = pdf.output('arraybuffer');
+    return new Uint8Array(buffer);
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
 export async function buildEvidencePackageZip(record: AnyARVRecord): Promise<Uint8Array> {
   const zip = new JSZip();
   const htmlWithQR = await buildCertificateHtmlWithQR(record);
