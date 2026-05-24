@@ -327,6 +327,123 @@ async function buildDeterministicDemoSeed(record: AnyARVRecord): Promise<Uint8Ar
   return hexToBytes(seedHash).slice(0, 32);
 }
 
+export async function buildKernelOfflineCertificateHtmlFromFile(
+  record: AnyARVRecord,
+  sourceFile: File,
+): Promise<string> {
+  const createdAt = record.timestamp_utc || record.issued_at_utc || new Date().toISOString();
+  const policy = 'ARV-L0-LOCAL-INTEGRITY-v1';
+  const producer = 'ARV-LOCAL';
+
+  if (!record.id?.trim()) {
+    throw new Error('ARV kernel certificate: record.id is required');
+  }
+
+  if (!record.document_hash?.trim()) {
+    throw new Error('ARV kernel certificate: record.document_hash is required');
+  }
+
+  if (!sourceFile) {
+    throw new Error('ARV kernel certificate: source file is required');
+  }
+
+  const sourceBytes = new Uint8Array(await sourceFile.arrayBuffer());
+  const sourceHash = await sha256HexFromBytes(sourceBytes);
+
+  if (sourceHash !== record.document_hash) {
+    throw new Error('ARV kernel certificate: source file hash does not match record.document_hash');
+  }
+
+  if (
+    record.source_file?.size_bytes !== undefined &&
+    record.source_file.size_bytes !== sourceBytes.byteLength
+  ) {
+    throw new Error('ARV kernel certificate: source file size does not match record.source_file.size_bytes');
+  }
+
+  const sourceFileName = safeKernelZipFileName(
+    record.source_file?.filename || sourceFile.name,
+    `${record.id}.source.bin`,
+  );
+
+  const signingPayload = {
+    format: 'ARV-DEMOCLIENT-KERNEL-CERTIFICATE-SIGNING-PAYLOAD-v1',
+    scope: 'LOCAL_L0',
+    evidence_id: record.id,
+    status: record.status,
+    document_hash: record.document_hash,
+    merkle_root: record.merkle_root,
+    timestamp_utc: record.timestamp_utc,
+    source_file: {
+      filename: record.source_file?.filename || sourceFile.name,
+      exported_file_name: sourceFileName,
+      mime_type: record.source_file?.mime_type || sourceFile.type || null,
+      size_bytes: sourceBytes.byteLength,
+    },
+    policy,
+    producer,
+  };
+
+  const seed = await buildDeterministicDemoSeed(record);
+  const keypair = await generateLocalSigningKeyPair(seed);
+  const signedEnvelope = await signCanonicalPayload(signingPayload, keypair.secret_key_hex, {
+    signed_at_utc: createdAt,
+  });
+
+  const signedEnvelopeHash = await hashSignedEnvelope(signedEnvelope);
+
+  const checkpoint = await createWitnessCheckpoint({
+    sequence: 1,
+    evidence_id: record.id,
+    payload_hash: signedEnvelope.payload_hash,
+    envelope_hash: signedEnvelopeHash,
+    previous_checkpoint_hash: null,
+    created_at_utc: createdAt,
+    witness: 'ARV-LOCAL-DEMOCLIENT',
+  });
+
+  const bundleManifest = await createEvidenceBundleManifest({
+    evidence_id: record.id,
+    source: {
+      file_name: sourceFileName,
+      mime_type: record.source_file?.mime_type || sourceFile.type || 'application/octet-stream',
+      size_bytes: sourceBytes.byteLength,
+      document_hash: sourceHash,
+    },
+    signed_envelope_hash: signedEnvelopeHash,
+    checkpoint_hash: checkpoint.checkpoint_hash,
+    checkpoint_sequence: checkpoint.sequence,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const verifierPayload = await createPortableVerifierPayload({
+    evidence_id: record.id,
+    document_hash: sourceHash,
+    manifest_hash: bundleManifest.manifest_hash,
+    signed_envelope_hash: signedEnvelopeHash,
+    checkpoint_hash: checkpoint.checkpoint_hash,
+    checkpoint_sequence: checkpoint.sequence,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const certificateArtifact = await createOfflineCertificateHtml({
+    title: `${record.id} — ARV Offline Evidence Certificate`,
+    evidence_id: record.id,
+    file_name: sourceFileName,
+    verifier_payload: verifierPayload,
+    bundle_manifest: bundleManifest,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  return certificateArtifact.html;
+}
+
 export async function buildKernelEvidencePackageZipFromFile(
   record: AnyARVRecord,
   sourceFile: File,
