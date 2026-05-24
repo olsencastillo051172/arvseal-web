@@ -7,7 +7,7 @@ import {
   buildKernelEvidencePackageZipFromFile,
   buildKernelOfflineCertificateHtmlFromFile,
   buildQRImage,
-  buildKernelPublicVerificationRecord,
+  buildKernelPublicVerificationRecordFromFile,
   buildRecordJson,
   buildKernelCertificatePdfFromFile,
   buildCertificateHtmlWithQR,
@@ -251,9 +251,14 @@ const recordJson = record ? buildRecordJson(record) : '';
       return;
     }
 
+    if (!sourceFile) {
+      setErrorMsg('Original source file is not available. Load the file again before viewing verification payload.');
+      return;
+    }
+
     setExporting(true);
     try {
-      const kernelVerificationJson = await buildKernelPublicVerificationRecord(record);
+      const kernelVerificationJson = await buildKernelPublicVerificationRecordFromFile(record, sourceFile);
       openTextInNewTab(kernelVerificationJson);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error generating verification payload');
