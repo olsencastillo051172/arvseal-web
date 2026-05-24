@@ -6,7 +6,7 @@ import type { GigEvidenceRecord } from '@/lib/rva/schemas';
 import {
   buildKernelEvidencePackageZipFromFile,
   buildQRImage,
-  buildPublicVerificationRecord,
+  buildKernelPublicVerificationRecord,
   buildRecordJson,
   buildCertificatePdf,
   buildCertificateHtmlWithQR,
@@ -174,9 +174,7 @@ export default function DemoClient(): JSX.Element {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const verificationJson = record ? buildPublicVerificationRecord(record) : '';
-  const recordJson = record ? buildRecordJson(record) : '';
+const recordJson = record ? buildRecordJson(record) : '';
 
   useEffect(() => {
     if (record?.qr?.payload) {
@@ -237,12 +235,21 @@ export default function DemoClient(): JSX.Element {
     }
   };
 
-  const handleOpenVerification = (): void => {
+  const handleOpenVerification = async (): Promise<void> => {
     if (!record) {
       setErrorMsg('Load a file first.');
       return;
     }
-    openTextInNewTab(verificationJson);
+
+    setExporting(true);
+    try {
+      const kernelVerificationJson = await buildKernelPublicVerificationRecord(record);
+      openTextInNewTab(kernelVerificationJson);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error generating verification payload');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleOpenRecord = (): void => {

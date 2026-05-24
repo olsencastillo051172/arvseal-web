@@ -15,6 +15,10 @@ import {
   type ARVEvidencePackageArtifactDescriptor,
 } from './kernel/package-index';
 import { createEvidenceZipPackage } from './kernel/zip-package';
+import {
+  decodeQrTransferString,
+  verifyQrTransferPayload,
+} from './kernel/qr-transfer-payload';
 
 export interface ARVVerificationPayload {
   id: string;
@@ -542,6 +546,69 @@ export async function buildKernelEvidencePackageZipFromFile(
   });
 
   return zipArtifact.zip_bytes;
+}
+
+export async function buildKernelPublicVerificationRecord(record: AnyARVRecord): Promise<string> {
+  const qrPayload = record.qr?.payload?.trim();
+
+  if (!qrPayload) {
+    throw new Error('ARV verification payload: record.qr.payload is required');
+  }
+
+  const decodedQrTransfer = await decodeQrTransferString(qrPayload);
+  const qrTransferOk = await verifyQrTransferPayload(decodedQrTransfer);
+
+  if (!qrTransferOk) {
+    throw new Error('ARV verification payload: QR transfer payload failed verification');
+  }
+
+  if (decodedQrTransfer.body.evidence_id !== record.id) {
+    throw new Error('ARV verification payload: QR evidence_id does not match record.id');
+  }
+
+  return pretty({
+    format: 'ARV-DEMOCLIENT-KERNEL-VERIFICATION-PAYLOAD-v1',
+    scope: 'LOCAL_L0',
+    algorithm: 'SHA-256',
+    evidence_id: record.id,
+    status: record.status,
+    document_hash: record.document_hash,
+    merkle_root: record.merkle_root,
+    timestamp_utc: record.timestamp_utc,
+    issued_at_utc: record.issued_at_utc,
+    source_file: {
+      filename: record.source_file.filename,
+      mime_type: record.source_file.mime_type,
+      size_bytes: record.source_file.size_bytes,
+      source_mode: record.source_file.source_mode,
+      captured_at_utc: record.source_file.captured_at_utc,
+    },
+    signature: {
+      algorithm: record.signature.algorithm,
+      public_key_fingerprint: record.signature.public_key_fingerprint,
+      value_present: Boolean(record.signature.value),
+    },
+    qr_transfer: {
+      prefix: decodedQrTransfer.prefix,
+      transfer_string: decodedQrTransfer.transfer_string,
+      transfer_hash: decodedQrTransfer.body.transfer_hash,
+      verified: true,
+      body: decodedQrTransfer.body,
+    },
+    consistency: {
+      evidence_id_matches_qr_transfer: decodedQrTransfer.body.evidence_id === record.id,
+      scope_is_local_l0: decodedQrTransfer.body.scope === 'LOCAL_L0',
+      qr_encoding: decodedQrTransfer.body.encoding,
+      qr_algorithm: decodedQrTransfer.body.algorithm,
+      qr_policy: decodedQrTransfer.body.policy,
+      qr_producer: decodedQrTransfer.body.producer,
+    },
+    policy: 'ARV-L0-LOCAL-INTEGRITY-v1',
+    producer: 'ARV-LOCAL',
+    verification_url: record.verification_url,
+    note:
+      'LOCAL_L0 kernel-compatible verification payload. This is not ARV Authority registration, not a public ledger record, and not RFC 3161 timestamping.',
+  });
 }
 
 export function buildPublicVerificationRecord(record: AnyARVRecord): string {
