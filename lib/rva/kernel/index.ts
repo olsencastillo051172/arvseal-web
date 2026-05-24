@@ -14,3 +14,5 @@ export * from './bundle';
 export * from './verifier-payload';
 
 export * from './offline-certificate';
+
+export * from './package-index';
