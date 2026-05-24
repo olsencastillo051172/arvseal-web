@@ -18,3 +18,5 @@ export * from './offline-certificate';
 export * from './package-index';
 
 export * from './zip-package';
+
+export * from './qr-transfer-payload';
