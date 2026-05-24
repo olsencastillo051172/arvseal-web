@@ -4,7 +4,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { GigEvidenceRecord } from '@/lib/rva/schemas';
 import {
-  buildEvidencePackageZip,
+  buildKernelEvidencePackageZipFromFile,
   buildQRImage,
   buildPublicVerificationRecord,
   buildRecordJson,
@@ -167,6 +167,7 @@ async function buildLocalGigRecord(file: File, hash: string): Promise<GigEvidenc
 }
 export default function DemoClient(): JSX.Element {
   const [record, setRecord] = useState<GigEvidenceRecord | null>(null);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [hashing, setHashing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -257,11 +258,20 @@ export default function DemoClient(): JSX.Element {
       setErrorMsg('Load a file first.');
       return;
     }
+
+    if (!sourceFile) {
+      setErrorMsg('Original source file is not available. Load the file again before exporting ZIP.');
+      return;
+    }
+
     setExporting(true);
     try {
-      const zipBytes = await buildEvidencePackageZip(record);
-      // Convertir Uint8Array a ArrayBuffer seguro para Blob
-      const blob = new Blob([zipBytes.buffer as ArrayBuffer], { type: 'application/zip' });
+      const zipBytes = await buildKernelEvidencePackageZipFromFile(record, sourceFile);
+      const zipBuffer = zipBytes.buffer.slice(
+        zipBytes.byteOffset,
+        zipBytes.byteOffset + zipBytes.byteLength,
+      ) as ArrayBuffer;
+      const blob = new Blob([zipBuffer], { type: 'application/zip' });
       downloadBlob(blob, `${record.id}.evidence-package.zip`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error generating ZIP');

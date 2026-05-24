@@ -4,6 +4,17 @@ import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import type { AnyARVRecord } from './schemas';
+import { sha256HexFromBytes, sha256HexFromString, hexToBytes } from './kernel/hash';
+import { generateLocalSigningKeyPair, signCanonicalPayload } from './kernel/signature';
+import { createWitnessCheckpoint, hashSignedEnvelope } from './kernel/checkpoint';
+import { createEvidenceBundleManifest } from './kernel/bundle';
+import { createPortableVerifierPayload } from './kernel/verifier-payload';
+import { createOfflineCertificateHtml } from './kernel/offline-certificate';
+import {
+  createEvidencePackageIndex,
+  type ARVEvidencePackageArtifactDescriptor,
+} from './kernel/package-index';
+import { createEvidenceZipPackage } from './kernel/zip-package';
 
 export interface ARVVerificationPayload {
   id: string;
@@ -284,6 +295,253 @@ export async function buildEvidencePackageZip(record: AnyARVRecord): Promise<Uin
   zip.file(`${record.id}.manifest.json`, JSON.stringify(buildEvidenceManifest(record), null, 2));
   zip.file(`${record.id}.record.json`, buildRecordJson(record));
   return await zip.generateAsync({ type: 'uint8array' });
+}
+
+function safeKernelZipFileName(value: string | null | undefined, fallback: string): string {
+  const raw = (value ?? '').trim() || fallback;
+
+  const cleaned = raw
+    .replace(/\\/g, '-')
+    .replace(/\//g, '-')
+    .replace(/\.\./g, '__')
+    .replace(/^[A-Za-z]:/, '')
+    .replace(/^[-.\s]+/, '')
+    .trim();
+
+  return cleaned || fallback;
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+async function buildDeterministicDemoSeed(record: AnyARVRecord): Promise<Uint8Array> {
+  const seedHash = await sha256HexFromString(
+    `ARV-DEMOCLIENT-KERNEL-ZIP-v1:${record.id}:${record.document_hash}`,
+  );
+
+  return hexToBytes(seedHash).slice(0, 32);
+}
+
+export async function buildKernelEvidencePackageZipFromFile(
+  record: AnyARVRecord,
+  sourceFile: File,
+): Promise<Uint8Array> {
+  const createdAt = record.timestamp_utc || record.issued_at_utc || new Date().toISOString();
+  const policy = 'ARV-L0-LOCAL-INTEGRITY-v1';
+  const producer = 'ARV-LOCAL';
+
+  if (!record.id?.trim()) {
+    throw new Error('ARV kernel ZIP: record.id is required');
+  }
+
+  if (!record.document_hash?.trim()) {
+    throw new Error('ARV kernel ZIP: record.document_hash is required');
+  }
+
+  if (!sourceFile) {
+    throw new Error('ARV kernel ZIP: source file is required');
+  }
+
+  const sourceBytes = new Uint8Array(await sourceFile.arrayBuffer());
+  const sourceHash = await sha256HexFromBytes(sourceBytes);
+
+  if (sourceHash !== record.document_hash) {
+    throw new Error('ARV kernel ZIP: source file hash does not match record.document_hash');
+  }
+
+  if (
+    record.source_file?.size_bytes !== undefined &&
+    record.source_file.size_bytes !== sourceBytes.byteLength
+  ) {
+    throw new Error('ARV kernel ZIP: source file size does not match record.source_file.size_bytes');
+  }
+
+  const sourceFileName = safeKernelZipFileName(
+    record.source_file?.filename || sourceFile.name,
+    `${record.id}.source.bin`,
+  );
+
+  const signingPayload = {
+    format: 'ARV-DEMOCLIENT-KERNEL-ZIP-SIGNING-PAYLOAD-v1',
+    scope: 'LOCAL_L0',
+    evidence_id: record.id,
+    status: record.status,
+    document_hash: record.document_hash,
+    merkle_root: record.merkle_root,
+    timestamp_utc: record.timestamp_utc,
+    source_file: {
+      filename: record.source_file?.filename || sourceFile.name,
+      exported_file_name: sourceFileName,
+      mime_type: record.source_file?.mime_type || sourceFile.type || null,
+      size_bytes: sourceBytes.byteLength,
+    },
+    policy,
+    producer,
+  };
+
+  const seed = await buildDeterministicDemoSeed(record);
+  const keypair = await generateLocalSigningKeyPair(seed);
+  const signedEnvelope = await signCanonicalPayload(signingPayload, keypair.secret_key_hex, {
+    signed_at_utc: createdAt,
+  });
+
+  const signedEnvelopeHash = await hashSignedEnvelope(signedEnvelope);
+
+  const checkpoint = await createWitnessCheckpoint({
+    sequence: 1,
+    evidence_id: record.id,
+    payload_hash: signedEnvelope.payload_hash,
+    envelope_hash: signedEnvelopeHash,
+    previous_checkpoint_hash: null,
+    created_at_utc: createdAt,
+    witness: 'ARV-LOCAL-DEMOCLIENT',
+  });
+
+  const bundleManifest = await createEvidenceBundleManifest({
+    evidence_id: record.id,
+    source: {
+      file_name: sourceFileName,
+      mime_type: record.source_file?.mime_type || sourceFile.type || 'application/octet-stream',
+      size_bytes: sourceBytes.byteLength,
+      document_hash: sourceHash,
+    },
+    signed_envelope_hash: signedEnvelopeHash,
+    checkpoint_hash: checkpoint.checkpoint_hash,
+    checkpoint_sequence: checkpoint.sequence,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const verifierPayload = await createPortableVerifierPayload({
+    evidence_id: record.id,
+    document_hash: sourceHash,
+    manifest_hash: bundleManifest.manifest_hash,
+    signed_envelope_hash: signedEnvelopeHash,
+    checkpoint_hash: checkpoint.checkpoint_hash,
+    checkpoint_sequence: checkpoint.sequence,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const certificateArtifact = await createOfflineCertificateHtml({
+    title: `${record.id} — ARV Offline Evidence Certificate`,
+    evidence_id: record.id,
+    file_name: sourceFileName,
+    verifier_payload: verifierPayload,
+    bundle_manifest: bundleManifest,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const signedEnvelopeJson = JSON.stringify(signedEnvelope, null, 2);
+  const checkpointJson = JSON.stringify(checkpoint, null, 2);
+  const bundleManifestJson = JSON.stringify(bundleManifest, null, 2);
+  const verifierPayloadJson = JSON.stringify(verifierPayload, null, 2);
+  const certificateHtml = certificateArtifact.html;
+
+  const signedEnvelopeFile = `${record.id}.signed-envelope.json`;
+  const checkpointFile = `${record.id}.witness-checkpoint.json`;
+  const bundleManifestFile = `${record.id}.bundle-manifest.json`;
+  const verifierPayloadFile = `${record.id}.verifier-payload.json`;
+  const certificateFile = `${record.id}.certificate.html`;
+
+  const artifacts: ARVEvidencePackageArtifactDescriptor[] = [
+    {
+      role: 'source',
+      file_name: sourceFileName,
+      media_type: record.source_file?.mime_type || sourceFile.type || 'application/octet-stream',
+      sha256: sourceHash,
+      size_bytes: sourceBytes.byteLength,
+    },
+    {
+      role: 'offline_certificate_html',
+      file_name: certificateFile,
+      media_type: 'text/html',
+      sha256: await sha256HexFromString(certificateHtml),
+      size_bytes: utf8Bytes(certificateHtml),
+    },
+    {
+      role: 'verifier_payload_json',
+      file_name: verifierPayloadFile,
+      media_type: 'application/json',
+      sha256: await sha256HexFromString(verifierPayloadJson),
+      size_bytes: utf8Bytes(verifierPayloadJson),
+    },
+    {
+      role: 'bundle_manifest_json',
+      file_name: bundleManifestFile,
+      media_type: 'application/json',
+      sha256: await sha256HexFromString(bundleManifestJson),
+      size_bytes: utf8Bytes(bundleManifestJson),
+    },
+    {
+      role: 'signed_envelope_json',
+      file_name: signedEnvelopeFile,
+      media_type: 'application/json',
+      sha256: await sha256HexFromString(signedEnvelopeJson),
+      size_bytes: utf8Bytes(signedEnvelopeJson),
+    },
+    {
+      role: 'witness_checkpoint_json',
+      file_name: checkpointFile,
+      media_type: 'application/json',
+      sha256: await sha256HexFromString(checkpointJson),
+      size_bytes: utf8Bytes(checkpointJson),
+    },
+  ];
+
+  const packageIndex = await createEvidencePackageIndex({
+    evidence_id: record.id,
+    artifacts,
+    certificate_hash: certificateArtifact.metadata.certificate_hash,
+    verifier_payload_hash: verifierPayload.payload_hash,
+    manifest_hash: bundleManifest.manifest_hash,
+    checkpoint_hash: checkpoint.checkpoint_hash,
+    signed_envelope_hash: signedEnvelopeHash,
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  const zipArtifact = await createEvidenceZipPackage({
+    evidence_id: record.id,
+    package_index: packageIndex,
+    files: [
+      {
+        file_name: sourceFileName,
+        content: sourceBytes,
+      },
+      {
+        file_name: certificateFile,
+        content: certificateHtml,
+      },
+      {
+        file_name: verifierPayloadFile,
+        content: verifierPayloadJson,
+      },
+      {
+        file_name: bundleManifestFile,
+        content: bundleManifestJson,
+      },
+      {
+        file_name: signedEnvelopeFile,
+        content: signedEnvelopeJson,
+      },
+      {
+        file_name: checkpointFile,
+        content: checkpointJson,
+      },
+    ],
+    created_at_utc: createdAt,
+    policy,
+    producer,
+  });
+
+  return zipArtifact.zip_bytes;
 }
 
 export function buildPublicVerificationRecord(record: AnyARVRecord): string {
