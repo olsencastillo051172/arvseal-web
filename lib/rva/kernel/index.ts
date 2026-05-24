@@ -4,3 +4,5 @@ export * from './merkle';
 export * from './manifest';
 export * from './policy';
 export * from './verify';
+
+export * from './signature';
