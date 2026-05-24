@@ -11,6 +11,8 @@ import {
   buildCertificatePdf,
   buildCertificateHtmlWithQR,
 } from '@/lib/rva/artifacts';
+import { createQrTransferPayload } from '@/lib/rva/kernel/qr-transfer-payload';
+import { sha256HexFromString } from '@/lib/rva/kernel/hash';
 
 function generateLocalId(): string {
   const ts = Date.now().toString().slice(-8);
@@ -56,10 +58,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function buildLocalGigRecord(file: File, hash: string): GigEvidenceRecord {
+async function buildLocalGigRecord(file: File, hash: string): Promise<GigEvidenceRecord> {
   const now = new Date().toISOString();
   const id = generateLocalId();
-  const qrPayload = JSON.stringify({
+
+  const legacyVerifierBody = {
     id,
     status: 'LOCAL_UNREGISTERED',
     hash,
@@ -67,7 +70,49 @@ function buildLocalGigRecord(file: File, hash: string): GigEvidenceRecord {
     ts: now,
     verify: null,
     sigfp: 'LOCAL-DEMO',
+  };
+
+  const verifierPayloadHash = await sha256HexFromString(JSON.stringify(legacyVerifierBody));
+
+  const manifestHash = await sha256HexFromString(JSON.stringify({
+    format: 'ARV-DEMO-LOCAL-MANIFEST-v1',
+    scope: 'LOCAL_L0',
+    evidence_id: id,
+    document_hash: hash,
+    merkle_root: hash,
+    source_file: {
+      filename: file.name,
+      mime_type: file.type || null,
+      size_bytes: file.size,
+    },
+    created_at_utc: now,
+    policy: 'ARV-L0-LOCAL-INTEGRITY-v1',
+    producer: 'ARV-LOCAL',
+  }));
+
+  const checkpointHash = await sha256HexFromString(JSON.stringify({
+    format: 'ARV-DEMO-LOCAL-CHECKPOINT-v1',
+    scope: 'LOCAL_L0',
+    sequence: 1,
+    evidence_id: id,
+    verifier_payload_hash: verifierPayloadHash,
+    manifest_hash: manifestHash,
+    document_hash: hash,
+    created_at_utc: now,
+    witness: 'ARV-LOCAL-DEMO',
+  }));
+
+  const qrTransfer = await createQrTransferPayload({
+    evidence_id: id,
+    verifier_payload_hash: verifierPayloadHash,
+    manifest_hash: manifestHash,
+    checkpoint_hash: checkpointHash,
+    created_at_utc: now,
+    policy: 'ARV-L0-LOCAL-INTEGRITY-v1',
+    producer: 'ARV-LOCAL',
   });
+
+  const qrPayload = qrTransfer.transfer_string;
 
   return {
     id,
@@ -120,7 +165,6 @@ function buildLocalGigRecord(file: File, hash: string): GigEvidenceRecord {
     dispute_status: null,
   };
 }
-
 export default function DemoClient(): JSX.Element {
   const [record, setRecord] = useState<GigEvidenceRecord | null>(null);
   const [hashing, setHashing] = useState(false);
@@ -148,7 +192,7 @@ export default function DemoClient(): JSX.Element {
     setErrorMsg(null);
     try {
       const hash = await sha256Hex(file);
-      const nextRecord = buildLocalGigRecord(file, hash);
+      const nextRecord = await buildLocalGigRecord(file, hash);
       setRecord(nextRecord);
     } catch (error) {
       setErrorMsg(error instanceof Error ? error.message : 'Could not process file.');
