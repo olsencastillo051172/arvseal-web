@@ -250,11 +250,14 @@ export default function DemoClient(): JSX.Element {
           <h1 className="text-2xl text-white font-bold tracking-tight">ARV</h1>
           <p className="text-xs text-gray-500 tracking-[0.25em] uppercase">ARV Reality Validation Authority</p>
           <p className="mt-1 text-[10px] text-gray-400 tracking-[0.35em] uppercase">A System by Intelligence Olsen (IO)</p>
+          <p className="mt-4 text-xs text-gray-300 tracking-[0.18em] uppercase">Create portable evidence for any file</p>
+          <p className="mt-1 text-[10px] text-gray-500 tracking-[0.22em] uppercase">Offline-first · No upload · Browser-local · Self-contained evidence</p>
         </div>
         <div className="text-right text-xs">
-          <div className="text-amber-400">MODE: LOCAL_UNREGISTERED</div>
-          <div>VERTICAL: GIG EVIDENCE</div>
-          <div>CORE: ARV Core Pack v1</div>
+          <div className="text-amber-400 font-bold">CLIENT-CONTROLLED PROOF</div>
+          <div>Runs in your environment</div>
+          <div>Append-only evidence manifest</div>
+          <div>Authority registration available</div>
         </div>
       </header>
 
@@ -264,7 +267,34 @@ export default function DemoClient(): JSX.Element {
         </div>
       )}
 
-      <div className="mb-6">
+      
+                              {/* Capability Matrix */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 text-xs">
+        <div className="border border-green-700 p-3 rounded">
+          <div className="text-green-400 font-bold mb-2">CLIENT-CONTROLLED ENGINE</div>
+          <div>Runs in your environment</div>
+          <div>No upload required</div>
+          <div>Any-file evidence capture</div>
+          <div>Tamper detection</div>
+        </div>
+
+        <div className="border border-amber-700 p-3 rounded">
+          <div className="text-amber-400 font-bold mb-2">PORTABLE EVIDENCE KIT</div>
+          <div>Self-contained evidence ZIP</div>
+          <div>Offline HTML certificate</div>
+          <div>Portable QR verifier</div>
+          <div>Append-only manifest</div>
+        </div>
+
+        <div className="border border-blue-700 p-3 rounded">
+          <div className="text-blue-400 font-bold mb-2">ARV REGISTERED LAYER</div>
+          <div>Official ARV Validation ID</div>
+          <div>Registered append-only ledger</div>
+          <div>On-prem / enterprise deployment</div>
+          <div>Dispute-ready verification</div>
+        </div>
+      </div>
+<div className="mb-6">
         <p className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Step 1 — Load Evidence File</p>
         <div
           onDrop={handleDrop}
@@ -302,14 +332,14 @@ export default function DemoClient(): JSX.Element {
 
       {record && (
         <div className="bg-gray-900 border border-gray-800 p-6 mb-6">
-          <p className="text-xs text-gray-500 mb-4 uppercase tracking-widest">Local Gig Evidence Record</p>
+          <p className="text-xs text-gray-500 mb-4 uppercase tracking-widest">Local ARV Evidence Record</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
             <div className="space-y-3">
               <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Record ID</span><span className="text-white font-bold">{record.id}</span></div>
-              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Status</span><span className="text-amber-400">{record.status}</span></div>
-              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Worker</span><span className="text-gray-300">{record.worker_name}</span></div>
-              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Client</span><span className="text-gray-300">{record.client_name}</span></div>
-              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Project</span><span className="text-gray-300">{record.project_name}</span></div>
+              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Status</span><span className="text-amber-400">{record.status === 'LOCAL_UNREGISTERED' ? 'LOCAL HASH COMPUTED — NOT YET REGISTERED' : record.status}</span></div>
+              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Source File</span><span className="text-gray-300">{record.source_file.filename}</span></div>
+              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">MIME Type</span><span className="text-gray-300">{record.source_file.mime_type || 'Unknown'}</span></div>
+              <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Size</span><span className="text-gray-300">{formatBytes(record.source_file.size_bytes)}</span></div>
             </div>
             <div className="space-y-3">
               <div><span className="text-gray-500 block uppercase tracking-wider mb-1">Document Hash</span><span className="text-green-500 break-all font-mono text-[10px]">{record.document_hash}</span></div>
@@ -320,7 +350,7 @@ export default function DemoClient(): JSX.Element {
           </div>
           {qrDataUrl && (
             <div className="mt-6 pt-4 border-t border-gray-700 flex flex-col items-center">
-              <p className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Signed QR Payload</p>
+              <p className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Portable QR Verifier</p>
               <img src={qrDataUrl} alt="QR Code for verification" className="w-32 h-32 border border-gray-600 rounded" />
               <p className="text-gray-600 text-[10px] mt-2 break-all text-center max-w-md">{record.qr.payload}</p>
             </div>
@@ -329,13 +359,20 @@ export default function DemoClient(): JSX.Element {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-        <button onClick={handleOpenCertificate} className="border border-amber-600 text-amber-400 py-2 px-3 text-xs font-bold uppercase hover:bg-amber-600/10 transition-colors">Open Certificate HTML</button>
-        <button onClick={handleExportPdf} disabled={exporting || !record} className="border border-purple-600 text-purple-400 py-2 px-3 text-xs font-bold uppercase hover:bg-purple-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Generating PDF...' : 'Export PDF Certificate'}</button>
-        <button onClick={handleExportZip} disabled={exporting} className="border border-blue-600 text-blue-400 py-2 px-3 text-xs font-bold uppercase hover:bg-blue-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Building ZIP...' : 'Export Evidence Package ZIP'}</button>
-        <button onClick={handleOpenVerification} className="border border-emerald-600 text-emerald-400 py-2 px-3 text-xs font-bold uppercase hover:bg-emerald-600/10 transition-colors">Open Verification Record</button>
-        <button onClick={handleOpenRecord} className="border border-gray-500 text-gray-300 py-2 px-3 text-xs font-bold uppercase hover:bg-gray-700/20 transition-colors md:col-span-2">Open Raw Record JSON</button>
+        <button onClick={handleOpenCertificate} className="border border-amber-600 text-amber-400 py-2 px-3 text-xs font-bold uppercase hover:bg-amber-600/10 transition-colors">View Certificate</button>
+        <button onClick={handleExportPdf} disabled={exporting || !record} className="border border-purple-600 text-purple-400 py-2 px-3 text-xs font-bold uppercase hover:bg-purple-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Generating PDF...' : 'Download Certificate PDF'}</button>
+        <button onClick={handleExportZip} disabled={exporting} className="border border-blue-600 text-blue-400 py-2 px-3 text-xs font-bold uppercase hover:bg-blue-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Building ZIP...' : 'Download Evidence Package ZIP'}</button>
+        <button onClick={handleOpenVerification} className="border border-emerald-600 text-emerald-400 py-2 px-3 text-xs font-bold uppercase hover:bg-emerald-600/10 transition-colors">View Verification Payload</button>
+        <button onClick={handleOpenRecord} className="border border-gray-500 text-gray-300 py-2 px-3 text-xs font-bold uppercase hover:bg-gray-700/20 transition-colors md:col-span-2">View L0 Record JSON</button>
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
 

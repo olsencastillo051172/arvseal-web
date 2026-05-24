@@ -156,7 +156,7 @@ function renderVerticalBlock(record: AnyARVRecord): string {
 
 export function buildCertificateHtml(record: AnyARVRecord, qrDataUrl?: string): string {
   const localBanner = record.status === 'LOCAL_UNREGISTERED'
-    ? `<div class="notice-local">⚠ LOCAL EVIDENCE — NOT REGISTERED IN PUBLIC LEDGER</div>`
+    ? `<div class="notice-local">⚠ LOCAL HASH COMPUTED — NOT YET REGISTERED</div>`
     : '';
   const verification = buildVerificationPayload(record);
   const qrImageHtml = qrDataUrl
@@ -228,7 +228,7 @@ export function buildCertificateHtml(record: AnyARVRecord, qrDataUrl?: string): 
       </div>
       <div class="footer">
         <div>${escapeHtml(record.id)} · ${escapeHtml(record.canon)}</div>
-        <div>ARV · A System by IO</div>
+        <div>ARV · A System by Intelligence Olsen (IO)</div>
       </div>
     </div>
   </div>
@@ -291,5 +291,51 @@ export function buildPublicVerificationRecord(record: AnyARVRecord): string {
 }
 
 export function buildRecordJson(record: AnyARVRecord): string {
-  return pretty(record);
+  const stripNullish = (value: unknown): unknown => {
+    if (value === null || value === undefined) return undefined;
+
+    if (Array.isArray(value)) {
+      const cleanedArray = value
+        .map(stripNullish)
+        .filter((item) => item !== undefined);
+
+      return cleanedArray.length > 0 ? cleanedArray : undefined;
+    }
+
+    if (typeof value === 'object') {
+      const cleanedObject = Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .map(([key, item]) => [key, stripNullish(item)])
+          .filter(([, item]) => item !== undefined),
+      );
+
+      return Object.keys(cleanedObject).length > 0 ? cleanedObject : undefined;
+    }
+
+    return value;
+  };
+
+  const cleanRecord = stripNullish(record) as Record<string, unknown>;
+
+  const sourceRecord = record as AnyARVRecord & {
+    signature?: { value?: string | null };
+    dual_seal?: { secondary_seal_hash?: string | null };
+  };
+
+  if (!sourceRecord.signature?.value) {
+    delete cleanRecord.signature;
+  }
+
+  if (!sourceRecord.dual_seal?.secondary_seal_hash) {
+    delete cleanRecord.dual_seal;
+  }
+
+  return pretty({
+    _arv_level: 'L0',
+    _arv_policy: 'ARV-L0-LOCAL-INTEGRITY-v1',
+    _arv_note:
+      'LOCAL PROOF — authority fields are omitted by design. Register with ARV Authority to activate official validation, registered ledger position, authority seal, and institutional verification.',
+    ...cleanRecord,
+  });
 }
+
