@@ -10,3 +10,5 @@ export * from './signature';
 export * from './checkpoint';
 
 export * from './bundle';
+
+export * from './verifier-payload';
