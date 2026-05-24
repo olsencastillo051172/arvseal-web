@@ -12,3 +12,5 @@ export * from './checkpoint';
 export * from './bundle';
 
 export * from './verifier-payload';
+
+export * from './offline-certificate';
