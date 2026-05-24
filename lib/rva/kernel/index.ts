@@ -6,3 +6,5 @@ export * from './policy';
 export * from './verify';
 
 export * from './signature';
+
+export * from './checkpoint';
