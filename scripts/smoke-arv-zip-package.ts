@@ -48,6 +48,7 @@ import {
   hashEvidenceZipPackageMetadata,
   verifyEvidenceZipPackageArtifact,
   verifyEvidenceZipBytesWithEmbeddedPackageIndex,
+  verifyEvidenceZipBytesWithEmbeddedPackageIndexResult,
   type ARVEvidenceZipPackageArtifact,
   type ARVEvidenceZipPackageFileInput,
 } from '../lib/rva/kernel/zip-package';
@@ -499,13 +500,38 @@ async function main(): Promise<void> {
     assert(await verifyEvidenceZipBytesWithEmbeddedPackageIndex(getZipArtifact().zip_bytes));
   });
 
-  await test('mutated zip bytes fail embedded package index verification', async () => {
+  
+  await test('embedded package index verification returns structured PASS result', async () => {
+    const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(getZipArtifact().zip_bytes);
+
+    assert(result.ok);
+    assert(result.status === 'PASS');
+    assert(result.reason === null);
+    assert(result.evidence_id === payload.id);
+    assert(result.package_index_file === `${payload.id}.package-index.json`);
+    assert(result.file_count === packageIndex.artifacts.length + 1);
+    assert(result.message === 'Evidence ZIP verifies against its embedded package index.');
+  });
+
+await test('mutated zip bytes fail embedded package index verification', async () => {
     assert(!await verifyEvidenceZipBytesWithEmbeddedPackageIndex(mutateZipBytes(getZipArtifact()).zip_bytes));
   });
 
 
 
-  await test('mutated zip bytes fail verification', async () => {
+  
+  await test('mutated zip bytes return structured FAIL result', async () => {
+    const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(
+      mutateZipBytes(getZipArtifact()).zip_bytes,
+    );
+
+    assert(!result.ok);
+    assert(result.status === 'FAIL');
+    assert(result.reason !== null);
+    assert(result.message.length > 0);
+  });
+
+await test('mutated zip bytes fail verification', async () => {
     assert(!await verifyEvidenceZipPackageArtifact(mutateZipBytes(getZipArtifact()), packageIndex));
   });
 

@@ -12,7 +12,7 @@ import {
   buildKernelCertificatePdfFromFile,
   buildCertificateHtmlWithQR,
 } from '@/lib/rva/artifacts';
-import { verifyEvidenceZipBytesWithEmbeddedPackageIndex } from '@/lib/rva/kernel/zip-package';
+import { verifyEvidenceZipBytesWithEmbeddedPackageIndexResult } from '@/lib/rva/kernel/zip-package';
 import { createQrTransferPayload } from '@/lib/rva/kernel/qr-transfer-payload';
 import { sha256HexFromString } from '@/lib/rva/kernel/hash';
 
@@ -224,14 +224,14 @@ const recordJson = record ? buildRecordJson(record) : '';
 
     try {
       const buffer = await file.arrayBuffer();
-      const ok = await verifyEvidenceZipBytesWithEmbeddedPackageIndex(new Uint8Array(buffer));
+      const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(new Uint8Array(buffer));
 
-      if (ok) {
+      if (result.ok) {
         setZipVerifyStatus('pass');
-        setZipVerifyMsg(`PASS — ${file.name} verifies against its embedded package index.`);
+        setZipVerifyMsg(`${result.status} — ${file.name} verifies against its embedded package index. Evidence ID: ${result.evidence_id}. Files: ${result.file_count}.`);
       } else {
         setZipVerifyStatus('fail');
-        setZipVerifyMsg(`FAIL — ${file.name} does not verify against its embedded package index.`);
+        setZipVerifyMsg(`${result.status} — ${file.name} does not verify against its embedded package index. Reason: ${result.reason}.`);
       }
     } catch (error) {
       setZipVerifyStatus('fail');
