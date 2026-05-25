@@ -12,6 +12,7 @@ import {
   buildKernelCertificatePdfFromFile,
   buildCertificateHtmlWithQR,
 } from '@/lib/rva/artifacts';
+import { verifyEvidenceZipBytesWithEmbeddedPackageIndex } from '@/lib/rva/kernel/zip-package';
 import { createQrTransferPayload } from '@/lib/rva/kernel/qr-transfer-payload';
 import { sha256HexFromString } from '@/lib/rva/kernel/hash';
 
@@ -172,9 +173,12 @@ export default function DemoClient(): JSX.Element {
   const [hashing, setHashing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [zipVerifyStatus, setZipVerifyStatus] = useState<'idle' | 'checking' | 'pass' | 'fail'>('idle');
+  const [zipVerifyMsg, setZipVerifyMsg] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const zipVerifyInputRef = useRef<HTMLInputElement>(null);
 const recordJson = record ? buildRecordJson(record) : '';
 
   useEffect(() => {
@@ -206,6 +210,33 @@ const recordJson = record ? buildRecordJson(record) : '';
     const file = e.target.files?.[0];
     if (file) void processFile(file);
     e.target.value = '';
+  };
+
+  const handleZipVerifyInput = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+
+    if (!file) return;
+
+    setErrorMsg(null);
+    setZipVerifyStatus('checking');
+    setZipVerifyMsg(`Checking embedded package index in ${file.name}...`);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const ok = await verifyEvidenceZipBytesWithEmbeddedPackageIndex(new Uint8Array(buffer));
+
+      if (ok) {
+        setZipVerifyStatus('pass');
+        setZipVerifyMsg(`PASS — ${file.name} verifies against its embedded package index.`);
+      } else {
+        setZipVerifyStatus('fail');
+        setZipVerifyMsg(`FAIL — ${file.name} does not verify against its embedded package index.`);
+      }
+    } catch (error) {
+      setZipVerifyStatus('fail');
+      setZipVerifyMsg(error instanceof Error ? error.message : 'FAIL — Evidence ZIP verification failed.');
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>): void => {
@@ -444,6 +475,45 @@ const recordJson = record ? buildRecordJson(record) : '';
           )}
         </div>
       )}
+
+      <div className="mb-6">
+        <p className="text-xs text-gray-500 mb-2 uppercase tracking-widest">Step 2 — Verify Evidence Package ZIP</p>
+        <div className="border border-cyan-800 rounded p-4 bg-cyan-950/10">
+          <input
+            ref={zipVerifyInputRef}
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            onChange={(e) => { void handleZipVerifyInput(e); }}
+          />
+
+          <button
+            onClick={() => zipVerifyInputRef.current?.click()}
+            disabled={zipVerifyStatus === 'checking'}
+            className="border border-cyan-600 text-cyan-400 py-2 px-3 text-xs font-bold uppercase hover:bg-cyan-600/10 disabled:opacity-50 transition-colors"
+          >
+            {zipVerifyStatus === 'checking' ? 'Verifying ZIP...' : 'Verify Evidence Package ZIP'}
+          </button>
+
+          <p className="text-gray-600 text-xs mt-3">
+            Browser-local verification using the embedded package-index.json file inside the evidence ZIP.
+          </p>
+
+          {zipVerifyMsg && (
+            <p
+              className={`mt-3 text-xs font-bold ${
+                zipVerifyStatus === 'pass'
+                  ? 'text-green-400'
+                  : zipVerifyStatus === 'fail'
+                    ? 'text-red-400'
+                    : 'text-cyan-400'
+              }`}
+            >
+              {zipVerifyMsg}
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
         <button onClick={handleOpenCertificate} className="border border-amber-600 text-amber-400 py-2 px-3 text-xs font-bold uppercase hover:bg-amber-600/10 transition-colors">View Certificate</button>

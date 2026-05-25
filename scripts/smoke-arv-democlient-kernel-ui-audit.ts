@@ -105,8 +105,13 @@ function main(): void {
   const handleOpenCertificate = extractFunctionBlock(demoClient, 'handleOpenCertificate');
   const handleExportPdf = extractFunctionBlock(demoClient, 'handleExportPdf');
   const handleExportZip = extractFunctionBlock(demoClient, 'handleExportZip');
+  const handleZipVerifyInput = extractFunctionBlock(demoClient, 'handleZipVerifyInput');
   const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerification');
   const processFile = extractFunctionBlock(demoClient, 'processFile');
+
+  test('DemoClient imports the embedded ZIP verifier helper', () => {
+    assert(demoClient.includes("import { verifyEvidenceZipBytesWithEmbeddedPackageIndex } from '@/lib/rva/kernel/zip-package';"));
+  });
 
   test('DemoClient imports the required ARV kernel-backed helpers', () => {
     assert(includesAll(artifactsImport, [
@@ -165,6 +170,15 @@ function main(): void {
       'buildPublicVerificationRecord',
       'buildEvidencePackageZip',
     ], 'handleExportPdf');
+  });
+
+  test('Verify Evidence Package ZIP uses the embedded package index verifier', () => {
+    assert(handleZipVerifyInput.includes('file.arrayBuffer()'));
+    assert(handleZipVerifyInput.includes('verifyEvidenceZipBytesWithEmbeddedPackageIndex(new Uint8Array(buffer))'));
+    assert(handleZipVerifyInput.includes("setZipVerifyStatus('pass')"));
+    assert(handleZipVerifyInput.includes("setZipVerifyStatus('fail')"));
+    assert(demoClient.includes('Verify Evidence Package ZIP'));
+    assert(demoClient.includes('embedded package-index.json'));
   });
 
   test('Download Evidence Package ZIP uses the kernel ZIP helper', () => {
