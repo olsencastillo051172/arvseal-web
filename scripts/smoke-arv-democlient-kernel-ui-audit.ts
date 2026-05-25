@@ -106,7 +106,9 @@ function main(): void {
   const handleExportPdf = extractFunctionBlock(demoClient, 'handleExportPdf');
   const handleExportZip = extractFunctionBlock(demoClient, 'handleExportZip');
   const handleZipVerifyInput = extractFunctionBlock(demoClient, 'handleZipVerifyInput');
-  const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerification');
+    const handleOpenZipVerificationReceipt = extractFunctionBlock(demoClient, 'handleOpenZipVerificationReceipt');
+  const handleDownloadZipVerificationReceipt = extractFunctionBlock(demoClient, 'handleDownloadZipVerificationReceipt');
+const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerification');
   const processFile = extractFunctionBlock(demoClient, 'processFile');
 
   test('DemoClient imports the structured embedded ZIP verifier helper', () => {
@@ -184,6 +186,23 @@ function main(): void {
     assert(demoClient.includes('Verify Evidence Package ZIP'));
     assert(demoClient.includes('embedded package-index.json'));
   });
+  test('DemoClient exposes ZIP verification receipt JSON actions', () => {
+    assert(demoClient.includes('buildZipVerificationReceiptJson'));
+    assert(demoClient.includes('zipVerifyResult'));
+    assert(demoClient.includes('setZipVerifyResult(result)'));
+    assert(demoClient.includes('View ZIP Verification Receipt JSON'));
+    assert(demoClient.includes('Download ZIP Verification Receipt JSON'));
+    assert(demoClient.includes('zip-verification-receipt.json'));
+
+    assert(handleOpenZipVerificationReceipt.includes('openTextInNewTab'));
+    assert(handleOpenZipVerificationReceipt.includes('buildZipVerificationReceiptJson'));
+
+    assert(handleDownloadZipVerificationReceipt.includes('downloadBlob'));
+    assert(handleDownloadZipVerificationReceipt.includes('buildZipVerificationReceiptJson'));
+    assert(handleDownloadZipVerificationReceipt.includes('zip-verification-receipt.json'));
+  });
+
+
 
   test('Download Evidence Package ZIP uses the kernel ZIP helper', () => {
     assert(handleExportZip.includes('sourceFile'));
