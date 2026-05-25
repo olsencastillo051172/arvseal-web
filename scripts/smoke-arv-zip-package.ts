@@ -47,6 +47,7 @@ import {
   createEvidenceZipPackage,
   hashEvidenceZipPackageMetadata,
   verifyEvidenceZipPackageArtifact,
+  verifyEvidenceZipBytesWithEmbeddedPackageIndex,
   type ARVEvidenceZipPackageArtifact,
   type ARVEvidenceZipPackageFileInput,
 } from '../lib/rva/kernel/zip-package';
@@ -494,7 +495,15 @@ async function main(): Promise<void> {
     assert(shuffled.metadata.zip_sha256 === getZipArtifact().metadata.zip_sha256);
   });
 
-  console.log('\n● verification rejection cases');
+  console.log('\n● verification rejection cases');  await test('evidence ZIP package verifies from embedded package index', async () => {
+    assert(await verifyEvidenceZipBytesWithEmbeddedPackageIndex(getZipArtifact().zip_bytes));
+  });
+
+  await test('mutated zip bytes fail embedded package index verification', async () => {
+    assert(!await verifyEvidenceZipBytesWithEmbeddedPackageIndex(mutateZipBytes(getZipArtifact()).zip_bytes));
+  });
+
+
 
   await test('mutated zip bytes fail verification', async () => {
     assert(!await verifyEvidenceZipPackageArtifact(mutateZipBytes(getZipArtifact()), packageIndex));

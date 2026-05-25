@@ -516,6 +516,92 @@ async function verifyZipBytesAgainstPackageIndex(
   return true;
 }
 
+function extractZipCentralEntryData(
+  zipBytes: Uint8Array,
+  centralEntry: ZipCentralEntry,
+): Uint8Array | null {
+  const localOffset = centralEntry.localOffset;
+
+  if (readU32LE(zipBytes, localOffset) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) return null;
+
+  const generalPurposeFlag = readU16LE(zipBytes, localOffset + 6);
+  const compressionMethod = readU16LE(zipBytes, localOffset + 8);
+  const dosTime = readU16LE(zipBytes, localOffset + 10);
+  const dosDate = readU16LE(zipBytes, localOffset + 12);
+  const localCrc = readU32LE(zipBytes, localOffset + 14);
+  const compressedSize = readU32LE(zipBytes, localOffset + 18);
+  const uncompressedSize = readU32LE(zipBytes, localOffset + 22);
+  const fileNameLength = readU16LE(zipBytes, localOffset + 26);
+  const extraFieldLength = readU16LE(zipBytes, localOffset + 28);
+
+  if (generalPurposeFlag !== ZIP_UTF8_FLAG) return null;
+  if (compressionMethod !== ZIP_STORE_METHOD) return null;
+  if (dosTime !== DOS_TIME || dosDate !== DOS_DATE) return null;
+  if (compressedSize !== uncompressedSize) return null;
+  if (compressedSize !== centralEntry.compressedSize) return null;
+  if (uncompressedSize !== centralEntry.uncompressedSize) return null;
+  if (localCrc !== centralEntry.crc) return null;
+  if (extraFieldLength !== 0) return null;
+
+  const localNameStart = localOffset + 30;
+  const localNameEnd = localNameStart + fileNameLength;
+  const dataStart = localNameEnd + extraFieldLength;
+  const dataEnd = dataStart + compressedSize;
+
+  if (localNameEnd > zipBytes.length) return null;
+  if (dataEnd > zipBytes.length) return null;
+
+  const decoder = new TextDecoder();
+  const localName = decoder.decode(zipBytes.slice(localNameStart, localNameEnd));
+
+  if (localName !== centralEntry.name) return null;
+
+  const data = zipBytes.slice(dataStart, dataEnd);
+
+  if (crc32(data) !== centralEntry.crc) return null;
+
+  return data;
+}
+
+export async function verifyEvidenceZipBytesWithEmbeddedPackageIndex(
+  zipBytes: Uint8Array,
+): Promise<boolean> {
+  try {
+    if (!(zipBytes instanceof Uint8Array)) return false;
+    if (zipBytes.length < 22) return false;
+    if (readU32LE(zipBytes, 0) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) return false;
+
+    const centralEntries = parseCentralDirectory(zipBytes);
+    if (!centralEntries) return false;
+
+    const packageIndexEntries = centralEntries.filter((entry) =>
+      entry.name.endsWith('.package-index.json'),
+    );
+
+    if (packageIndexEntries.length !== 1) return false;
+
+    const packageIndexData = extractZipCentralEntryData(zipBytes, packageIndexEntries[0]);
+    if (!packageIndexData) return false;
+
+    const packageIndexText = new TextDecoder().decode(packageIndexData);
+    const packageIndex = JSON.parse(packageIndexText) as ARVEvidencePackageIndex;
+
+    if (!packageIndex || typeof packageIndex !== 'object') return false;
+    if (packageIndexEntries[0].name !== buildPackageIndexFileName(packageIndex.evidence_id)) {
+      return false;
+    }
+
+    if (canonicalize(packageIndex) !== packageIndexText) return false;
+
+    if (!await verifyEvidencePackageIndex(packageIndex)) return false;
+
+    return verifyZipBytesAgainstPackageIndex(zipBytes, packageIndex);
+  } catch {
+    return false;
+  }
+}
+
+
 export async function createEvidenceZipPackage(
   input: ARVEvidenceZipPackageInput,
 ): Promise<ARVEvidenceZipPackageArtifact> {
