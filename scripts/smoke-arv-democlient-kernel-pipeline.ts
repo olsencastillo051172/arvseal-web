@@ -58,6 +58,7 @@ import {
 import {
   createEvidenceZipPackage,
   verifyEvidenceZipPackageArtifact,
+  verifyEvidenceZipBytesWithEmbeddedPackageIndex,
 } from '../lib/rva/kernel/zip-package';
 
 import {
@@ -383,6 +384,7 @@ async function main(): Promise<void> {
     assert(zipArtifact.metadata.file_count === evidence.package_files.length + 1);
     assert(isSha256Hex(zipArtifact.metadata.zip_sha256));
     assert(await verifyEvidenceZipPackageArtifact(zipArtifact, evidence.package_index));
+    assert(await verifyEvidenceZipBytesWithEmbeddedPackageIndex(zipArtifact.zip_bytes));
   });
 
   await test('buildKernelOfflineCertificateHtmlFromFile emits valid kernel certificate HTML', async () => {
@@ -413,6 +415,7 @@ async function main(): Promise<void> {
     assert(directZipBytes[0] === 0x50);
     assert(directZipBytes[1] === 0x4b);
     assert(directHash === expectedHash);
+    assert(await verifyEvidenceZipBytesWithEmbeddedPackageIndex(directZipBytes));
   });
 
   await test('buildKernelPublicVerificationRecordFromFile emits consolidated verification JSON', async () => {
