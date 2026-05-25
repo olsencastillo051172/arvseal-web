@@ -175,6 +175,7 @@ export default function DemoClient(): JSX.Element {
   const [exporting, setExporting] = useState(false);
   const [zipVerifyStatus, setZipVerifyStatus] = useState<'idle' | 'checking' | 'pass' | 'fail'>('idle');
   const [zipVerifyMsg, setZipVerifyMsg] = useState<string | null>(null);
+  const [zipVerifyResult, setZipVerifyResult] = useState<Awaited<ReturnType<typeof verifyEvidenceZipBytesWithEmbeddedPackageIndexResult>> | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -219,12 +220,15 @@ const recordJson = record ? buildRecordJson(record) : '';
     if (!file) return;
 
     setErrorMsg(null);
-    setZipVerifyStatus('checking');
+    
+    setZipVerifyResult(null);setZipVerifyStatus('checking');
     setZipVerifyMsg(`Checking embedded package index in ${file.name}...`);
 
     try {
       const buffer = await file.arrayBuffer();
       const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(new Uint8Array(buffer));
+
+      setZipVerifyResult(result);
 
       if (result.ok) {
         setZipVerifyStatus('pass');
@@ -239,7 +243,62 @@ const recordJson = record ? buildRecordJson(record) : '';
     }
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+  
+  const buildZipVerificationReceiptJson = (result: NonNullable<typeof zipVerifyResult>): string => {
+    const evidenceId =
+      'evidence_id' in result && typeof result.evidence_id === 'string'
+        ? result.evidence_id
+        : null;
+
+    const fileCount =
+      'file_count' in result && typeof result.file_count === 'number'
+        ? result.file_count
+        : null;
+
+    return JSON.stringify(
+      {
+        format: 'ARV-ZIP-VERIFICATION-RECEIPT-v1',
+        scope: 'LOCAL_L0',
+        verifier: 'ARV DemoClient',
+        generated_at_utc: new Date().toISOString(),
+        evidence_id: evidenceId,
+        file_count: fileCount,
+        result,
+      },
+      null,
+      2,
+    );
+  };
+
+  const handleOpenZipVerificationReceipt = (): void => {
+    if (!zipVerifyResult) {
+      setErrorMsg('Verify an evidence ZIP first.');
+      return;
+    }
+
+    openTextInNewTab(buildZipVerificationReceiptJson(zipVerifyResult));
+  };
+
+  const handleDownloadZipVerificationReceipt = (): void => {
+    if (!zipVerifyResult) {
+      setErrorMsg('Verify an evidence ZIP first.');
+      return;
+    }
+
+    const receiptJson = buildZipVerificationReceiptJson(zipVerifyResult);
+    const evidenceId =
+      'evidence_id' in zipVerifyResult && typeof zipVerifyResult.evidence_id === 'string'
+        ? zipVerifyResult.evidence_id
+        : 'ARV-ZIP';
+
+    const blob = new Blob([receiptJson], {
+      type: 'application/json;charset=utf-8',
+    });
+
+    downloadBlob(blob, `${evidenceId}.zip-verification-receipt.json`);
+  };
+
+const handleDrop = (e: React.DragEvent<HTMLDivElement>): void => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
@@ -520,6 +579,8 @@ const recordJson = record ? buildRecordJson(record) : '';
         <button onClick={handleExportPdf} disabled={exporting || !record} className="border border-purple-600 text-purple-400 py-2 px-3 text-xs font-bold uppercase hover:bg-purple-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Generating PDF...' : 'Download Certificate PDF'}</button>
         <button onClick={handleExportZip} disabled={exporting} className="border border-blue-600 text-blue-400 py-2 px-3 text-xs font-bold uppercase hover:bg-blue-600/10 disabled:opacity-50 transition-colors">{exporting ? 'Building ZIP...' : 'Download Evidence Package ZIP'}</button>
         <button onClick={handleOpenVerification} className="border border-emerald-600 text-emerald-400 py-2 px-3 text-xs font-bold uppercase hover:bg-emerald-600/10 transition-colors">View Verification Payload</button>
+            <button onClick={handleOpenZipVerificationReceipt} disabled={!zipVerifyResult} className="border border-cyan-600 text-cyan-400 py-2 px-3 text-xs font-bold uppercase hover:bg-cyan-600/10 disabled:opacity-50 transition-colors">View ZIP Verification Receipt JSON</button>
+            <button onClick={handleDownloadZipVerificationReceipt} disabled={!zipVerifyResult} className="border border-cyan-600 text-cyan-400 py-2 px-3 text-xs font-bold uppercase hover:bg-cyan-600/10 disabled:opacity-50 transition-colors">Download ZIP Verification Receipt JSON</button>
         <button onClick={handleOpenRecord} className="border border-gray-500 text-gray-300 py-2 px-3 text-xs font-bold uppercase hover:bg-gray-700/20 transition-colors md:col-span-2">View L0 Record JSON</button>
       </div>
     </div>
