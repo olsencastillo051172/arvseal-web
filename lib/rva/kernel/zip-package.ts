@@ -195,6 +195,10 @@ function validateFileInputs(files: ARVEvidenceZipPackageFileInput[]): void {
   }
 }
 
+function buildPackageIndexFileName(evidenceId: string): string {
+  return evidenceId + '.package-index.json';
+}
+
 function buildZip(entries: ZipBuildEntry[]): Uint8Array {
   const parts: Uint8Array[] = [];
   const centralEntries: Array<{
@@ -433,12 +437,27 @@ async function verifyZipBytesAgainstPackageIndex(
   const centralEntries = parseCentralDirectory(zipBytes);
   if (!centralEntries) return false;
 
-  if (centralEntries.length !== packageIndex.artifacts.length) return false;
+  const packageIndexFileContent = canonicalize(packageIndex);
+  const packageIndexFileBytes = new TextEncoder().encode(packageIndexFileContent);
+  const expectedEntries = [
+    {
+      file_name: buildPackageIndexFileName(packageIndex.evidence_id),
+      sha256: await sha256HexFromBytes(packageIndexFileBytes),
+      size_bytes: packageIndexFileBytes.byteLength,
+      is_package_index_file: true,
+    },
+    ...packageIndex.artifacts.map((artifact) => ({
+      ...artifact,
+      is_package_index_file: false,
+    })),
+  ];
+
+  if (centralEntries.length !== expectedEntries.length) return false;
 
   const decoder = new TextDecoder();
 
-  for (let index = 0; index < packageIndex.artifacts.length; index += 1) {
-    const expectedArtifact = packageIndex.artifacts[index];
+  for (let index = 0; index < expectedEntries.length; index += 1) {
+    const expectedArtifact = expectedEntries[index];
     const centralEntry = centralEntries[index];
 
     if (centralEntry.name !== expectedArtifact.file_name) return false;
@@ -486,6 +505,10 @@ async function verifyZipBytesAgainstPackageIndex(
       expectedArtifact.size_bytes !== undefined &&
       expectedArtifact.size_bytes !== data.byteLength
     ) {
+      return false;
+    }
+
+    if (expectedArtifact.is_package_index_file && decoder.decode(data) !== packageIndexFileContent) {
       return false;
     }
   }
@@ -547,10 +570,20 @@ export async function createEvidenceZipPackage(
     }
   }
 
-  const orderedFiles = input.package_index.artifacts.map((artifact) => ({
-    name: artifact.file_name,
-    data: fileMap.get(artifact.file_name)!,
-  }));
+  const packageIndexFileName = buildPackageIndexFileName(input.evidence_id);
+  validateSafeFileName(packageIndexFileName);
+
+  const packageIndexFileContent = canonicalize(input.package_index);
+  const orderedFiles = [
+    {
+      name: packageIndexFileName,
+      data: toBytes(packageIndexFileContent),
+    },
+    ...input.package_index.artifacts.map((artifact) => ({
+      name: artifact.file_name,
+      data: fileMap.get(artifact.file_name)!,
+    })),
+  ];
 
   const zipBytes = buildZip(orderedFiles);
   const zipSha256 = await sha256HexFromBytes(zipBytes);
@@ -562,7 +595,7 @@ export async function createEvidenceZipPackage(
     method: 'ZIP-STORE',
     evidence_id: input.evidence_id,
     package_index_hash: input.package_index.package_index_hash,
-    file_count: input.package_index.artifacts.length,
+    file_count: orderedFiles.length,
     zip_size_bytes: zipBytes.length,
     zip_sha256: zipSha256,
     created_at_utc: input.created_at_utc ?? new Date().toISOString(),
@@ -601,7 +634,8 @@ export async function verifyEvidenceZipPackageArtifact(
 
     if (metadata.evidence_id !== packageIndex.evidence_id) return false;
     if (metadata.package_index_hash !== packageIndex.package_index_hash) return false;
-    if (metadata.file_count !== packageIndex.artifacts.length) return false;
+    const expectedFileCount = packageIndex.artifacts.length + 1;
+    if (metadata.file_count !== expectedFileCount) return false;
     if (metadata.zip_size_bytes !== artifact.zip_bytes.length) return false;
 
     const expectedZipSha256 = await sha256HexFromBytes(artifact.zip_bytes);

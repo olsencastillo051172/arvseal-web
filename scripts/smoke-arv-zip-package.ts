@@ -413,7 +413,7 @@ async function main(): Promise<void> {
     assert(current.metadata.method === 'ZIP-STORE');
     assert(current.metadata.evidence_id === payload.id);
     assert(current.metadata.package_index_hash === packageIndex.package_index_hash);
-    assert(current.metadata.file_count === packageIndex.artifacts.length);
+    assert(current.metadata.file_count === packageIndex.artifacts.length + 1);
     assert(current.metadata.zip_size_bytes === current.zip_bytes.length);
     assert(isSha256Hex(current.metadata.zip_sha256));
     assert(isSha256Hex(current.metadata.zip_package_hash));
@@ -688,7 +688,7 @@ async function main(): Promise<void> {
 
     assert(await verifyEvidencePackageIndex(packageIndex));
     assert(current.metadata.package_index_hash === packageIndex.package_index_hash);
-    assert(current.metadata.file_count === packageIndex.artifacts.length);
+    assert(current.metadata.file_count === packageIndex.artifacts.length + 1);
     assert(await verifyEvidenceZipPackageArtifact(current, packageIndex));
   });
 

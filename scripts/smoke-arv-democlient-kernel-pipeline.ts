@@ -380,6 +380,7 @@ async function main(): Promise<void> {
 
     assert(zipArtifact.metadata.scope === 'LOCAL_L0');
     assert(zipArtifact.metadata.evidence_id === record.id);
+    assert(zipArtifact.metadata.file_count === evidence.package_files.length + 1);
     assert(isSha256Hex(zipArtifact.metadata.zip_sha256));
     assert(await verifyEvidenceZipPackageArtifact(zipArtifact, evidence.package_index));
   });
