@@ -49,6 +49,34 @@ export interface ARVEvidenceZipPackageArtifact {
   zip_bytes: Uint8Array;
 }
 
+
+
+export type ARVEvidenceZipVerificationStatus = 'PASS' | 'FAIL';
+
+export type ARVEvidenceZipVerificationFailureReason =
+  | 'invalid_zip_bytes'
+  | 'zip_header_invalid'
+  | 'central_directory_invalid'
+  | 'package_index_missing'
+  | 'package_index_ambiguous'
+  | 'package_index_unreadable'
+  | 'package_index_json_invalid'
+  | 'package_index_filename_mismatch'
+  | 'package_index_not_canonical'
+  | 'package_index_invalid'
+  | 'zip_content_does_not_match_package_index'
+  | 'unexpected_error';
+
+export interface ARVEvidenceZipVerificationResult {
+  ok: boolean;
+  status: ARVEvidenceZipVerificationStatus;
+  reason: ARVEvidenceZipVerificationFailureReason | null;
+  evidence_id: string | null;
+  package_index_file: string | null;
+  file_count: number | null;
+  message: string;
+}
+
 interface ZipBuildEntry {
   name: string;
   data: Uint8Array;
@@ -563,44 +591,203 @@ function extractZipCentralEntryData(
   return data;
 }
 
-export async function verifyEvidenceZipBytesWithEmbeddedPackageIndex(
+function failZipVerificationResult(
+  reason: ARVEvidenceZipVerificationFailureReason,
+  message: string,
+  details: Partial<Pick<
+    ARVEvidenceZipVerificationResult,
+    'evidence_id' | 'package_index_file' | 'file_count'
+  >> = {},
+): ARVEvidenceZipVerificationResult {
+  return {
+    ok: false,
+    status: 'FAIL',
+    reason,
+    evidence_id: details.evidence_id ?? null,
+    package_index_file: details.package_index_file ?? null,
+    file_count: details.file_count ?? null,
+    message,
+  };
+}
+
+function passZipVerificationResult(details: {
+  evidence_id: string;
+  package_index_file: string;
+  file_count: number;
+}): ARVEvidenceZipVerificationResult {
+  return {
+    ok: true,
+    status: 'PASS',
+    reason: null,
+    evidence_id: details.evidence_id,
+    package_index_file: details.package_index_file,
+    file_count: details.file_count,
+    message: 'Evidence ZIP verifies against its embedded package index.',
+  };
+}
+
+export async function verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(
   zipBytes: Uint8Array,
-): Promise<boolean> {
+): Promise<ARVEvidenceZipVerificationResult> {
   try {
-    if (!(zipBytes instanceof Uint8Array)) return false;
-    if (zipBytes.length < 22) return false;
-    if (readU32LE(zipBytes, 0) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) return false;
+    if (!(zipBytes instanceof Uint8Array)) {
+      return failZipVerificationResult(
+        'invalid_zip_bytes',
+        'Evidence ZIP input must be Uint8Array bytes.',
+      );
+    }
+
+    if (zipBytes.length < 22) {
+      return failZipVerificationResult(
+        'invalid_zip_bytes',
+        'Evidence ZIP is too small to contain a valid ZIP structure.',
+      );
+    }
+
+    if (readU32LE(zipBytes, 0) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+      return failZipVerificationResult(
+        'zip_header_invalid',
+        'Evidence ZIP does not start with a valid ZIP local file header.',
+      );
+    }
 
     const centralEntries = parseCentralDirectory(zipBytes);
-    if (!centralEntries) return false;
+    if (!centralEntries) {
+      return failZipVerificationResult(
+        'central_directory_invalid',
+        'Evidence ZIP central directory is invalid.',
+      );
+    }
 
     const packageIndexEntries = centralEntries.filter((entry) =>
       entry.name.endsWith('.package-index.json'),
     );
 
-    if (packageIndexEntries.length !== 1) return false;
-
-    const packageIndexData = extractZipCentralEntryData(zipBytes, packageIndexEntries[0]);
-    if (!packageIndexData) return false;
-
-    const packageIndexText = new TextDecoder().decode(packageIndexData);
-    const packageIndex = JSON.parse(packageIndexText) as ARVEvidencePackageIndex;
-
-    if (!packageIndex || typeof packageIndex !== 'object') return false;
-    if (packageIndexEntries[0].name !== buildPackageIndexFileName(packageIndex.evidence_id)) {
-      return false;
+    if (packageIndexEntries.length === 0) {
+      return failZipVerificationResult(
+        'package_index_missing',
+        'Evidence ZIP does not contain an embedded package index.',
+        { file_count: centralEntries.length },
+      );
     }
 
-    if (canonicalize(packageIndex) !== packageIndexText) return false;
+    if (packageIndexEntries.length !== 1) {
+      return failZipVerificationResult(
+        'package_index_ambiguous',
+        'Evidence ZIP contains more than one embedded package index.',
+        { file_count: centralEntries.length },
+      );
+    }
 
-    if (!await verifyEvidencePackageIndex(packageIndex)) return false;
+    const packageIndexFile = packageIndexEntries[0].name;
+    const packageIndexData = extractZipCentralEntryData(zipBytes, packageIndexEntries[0]);
 
-    return verifyZipBytesAgainstPackageIndex(zipBytes, packageIndex);
+    if (!packageIndexData) {
+      return failZipVerificationResult(
+        'package_index_unreadable',
+        'Embedded package index could not be read from the ZIP.',
+        {
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    const packageIndexText = new TextDecoder().decode(packageIndexData);
+
+    let packageIndex: ARVEvidencePackageIndex;
+
+    try {
+      packageIndex = JSON.parse(packageIndexText) as ARVEvidencePackageIndex;
+    } catch {
+      return failZipVerificationResult(
+        'package_index_json_invalid',
+        'Embedded package index is not valid JSON.',
+        {
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    if (!packageIndex || typeof packageIndex !== 'object') {
+      return failZipVerificationResult(
+        'package_index_json_invalid',
+        'Embedded package index JSON is not an object.',
+        {
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    if (packageIndexFile !== buildPackageIndexFileName(packageIndex.evidence_id)) {
+      return failZipVerificationResult(
+        'package_index_filename_mismatch',
+        'Embedded package index filename does not match its evidence ID.',
+        {
+          evidence_id: packageIndex.evidence_id ?? null,
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    if (canonicalize(packageIndex) !== packageIndexText) {
+      return failZipVerificationResult(
+        'package_index_not_canonical',
+        'Embedded package index is not in canonical form.',
+        {
+          evidence_id: packageIndex.evidence_id,
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    if (!await verifyEvidencePackageIndex(packageIndex)) {
+      return failZipVerificationResult(
+        'package_index_invalid',
+        'Embedded package index failed package index verification.',
+        {
+          evidence_id: packageIndex.evidence_id,
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    if (!await verifyZipBytesAgainstPackageIndex(zipBytes, packageIndex)) {
+      return failZipVerificationResult(
+        'zip_content_does_not_match_package_index',
+        'Evidence ZIP does not verify against its embedded package index.',
+        {
+          evidence_id: packageIndex.evidence_id,
+          package_index_file: packageIndexFile,
+          file_count: centralEntries.length,
+        },
+      );
+    }
+
+    return passZipVerificationResult({
+      evidence_id: packageIndex.evidence_id,
+      package_index_file: packageIndexFile,
+      file_count: centralEntries.length,
+    });
   } catch {
-    return false;
+    return failZipVerificationResult(
+      'unexpected_error',
+      'Evidence ZIP verification failed unexpectedly.',
+    );
   }
 }
 
+export async function verifyEvidenceZipBytesWithEmbeddedPackageIndex(
+  zipBytes: Uint8Array,
+): Promise<boolean> {
+  const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(zipBytes);
+  return result.ok;
+}
 
 export async function createEvidenceZipPackage(
   input: ARVEvidenceZipPackageInput,
