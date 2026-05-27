@@ -124,6 +124,71 @@ function mutateZipBytes(artifact: ARVEvidenceZipPackageArtifact): ARVEvidenceZip
   return clone;
 }
 
+
+function readU16LEForSmoke(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readU32LEForSmoke(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>>
+    0
+  );
+}
+
+function writeU32LEForSmoke(bytes: Uint8Array, offset: number, value: number): void {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function mutateZipWithHiddenLocalGap(
+  artifact: ARVEvidenceZipPackageArtifact,
+): ARVEvidenceZipPackageArtifact {
+  const clone = cloneZipArtifact(artifact);
+  const original = clone.zip_bytes;
+
+  const eocdOffset = original.length - 22;
+  const centralDirectoryOffset = readU32LEForSmoke(original, eocdOffset + 16);
+  const totalEntries = readU16LEForSmoke(original, eocdOffset + 10);
+
+  const firstFileNameLength = readU16LEForSmoke(original, 26);
+  const firstExtraLength = readU16LEForSmoke(original, 28);
+  const firstCompressedSize = readU32LEForSmoke(original, 18);
+  const insertAt = 30 + firstFileNameLength + firstExtraLength + firstCompressedSize;
+
+  const mutated = new Uint8Array(original.length + 1);
+  mutated.set(original.slice(0, insertAt), 0);
+  mutated[insertAt] = 0x00;
+  mutated.set(original.slice(insertAt), insertAt + 1);
+
+  const mutatedCentralDirectoryOffset = centralDirectoryOffset + 1;
+  const mutatedEocdOffset = eocdOffset + 1;
+
+  writeU32LEForSmoke(mutated, mutatedEocdOffset + 16, mutatedCentralDirectoryOffset);
+
+  let centralOffset = mutatedCentralDirectoryOffset;
+  for (let index = 0; index < totalEntries; index += 1) {
+    const fileNameLength = readU16LEForSmoke(mutated, centralOffset + 28);
+    const extraFieldLength = readU16LEForSmoke(mutated, centralOffset + 30);
+    const commentLength = readU16LEForSmoke(mutated, centralOffset + 32);
+    const localOffset = readU32LEForSmoke(mutated, centralOffset + 42);
+
+    if (localOffset >= insertAt) {
+      writeU32LEForSmoke(mutated, centralOffset + 42, localOffset + 1);
+    }
+
+    centralOffset += 46 + fileNameLength + extraFieldLength + commentLength;
+  }
+
+  clone.zip_bytes = mutated;
+  return clone;
+}
+
 const FIXED_TS = '2026-05-23T12:00:00Z';
 const SEED = new Uint8Array(32).fill(0x88);
 
@@ -543,6 +608,16 @@ await test('mutated zip bytes fail verification', async () => {
         zip_sha256: 'a'.repeat(64),
       },
     }, packageIndex));
+  });
+
+  await test('hidden local ZIP gap returns structured FAIL result', async () => {
+    const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(
+      mutateZipWithHiddenLocalGap(getZipArtifact()).zip_bytes,
+    );
+
+    assert(!result.ok);
+    assert(result.status === 'FAIL');
+    assert(result.reason === 'zip_content_does_not_match_package_index');
   });
 
   await test('mutated metadata package_index_hash fails verification', async () => {
