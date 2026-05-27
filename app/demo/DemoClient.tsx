@@ -1,4 +1,3 @@
-// app/demo/DemoClient.tsx
 'use client';
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
