@@ -569,6 +569,8 @@ function extractZipCentralEntryData(
 ): Uint8Array | null {
   const localOffset = centralEntry.localOffset;
 
+  if (!Number.isInteger(localOffset) || localOffset < 0) return null;
+  if (localOffset + 30 > zipBytes.length) return null;
   if (readU32LE(zipBytes, localOffset) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) return null;
 
   const generalPurposeFlag = readU16LE(zipBytes, localOffset + 6);
@@ -584,7 +586,6 @@ function extractZipCentralEntryData(
   if (generalPurposeFlag !== ZIP_UTF8_FLAG) return null;
   if (compressionMethod !== ZIP_STORE_METHOD) return null;
   if (dosTime !== DOS_TIME || dosDate !== DOS_DATE) return null;
-  if (compressedSize !== uncompressedSize) return null;
   if (compressedSize !== centralEntry.compressedSize) return null;
   if (uncompressedSize !== centralEntry.uncompressedSize) return null;
   if (localCrc !== centralEntry.crc) return null;
@@ -596,6 +597,7 @@ function extractZipCentralEntryData(
   const dataEnd = dataStart + compressedSize;
 
   if (localNameEnd > zipBytes.length) return null;
+  if (dataStart > zipBytes.length) return null;
   if (dataEnd > zipBytes.length) return null;
 
   const decoder = new TextDecoder();
@@ -605,6 +607,7 @@ function extractZipCentralEntryData(
 
   const data = zipBytes.slice(dataStart, dataEnd);
 
+  if (data.length !== compressedSize) return null;
   if (crc32(data) !== centralEntry.crc) return null;
 
   return data;
