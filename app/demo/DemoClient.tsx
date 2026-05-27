@@ -13,6 +13,7 @@ import {
   buildCertificateHtmlWithQR,
 } from '@/lib/rva/artifacts';
 import { verifyEvidenceZipBytesWithEmbeddedPackageIndexResult } from '@/lib/rva/kernel/zip-package';
+import { createEvidenceZipVerificationReceiptJson } from '@/lib/rva/kernel/zip-verification-receipt';
 import { createQrTransferPayload } from '@/lib/rva/kernel/qr-transfer-payload';
 import { sha256HexFromString } from '@/lib/rva/kernel/hash';
 
@@ -176,6 +177,7 @@ export default function DemoClient(): JSX.Element {
   const [zipVerifyStatus, setZipVerifyStatus] = useState<'idle' | 'checking' | 'pass' | 'fail'>('idle');
   const [zipVerifyMsg, setZipVerifyMsg] = useState<string | null>(null);
   const [zipVerifyResult, setZipVerifyResult] = useState<Awaited<ReturnType<typeof verifyEvidenceZipBytesWithEmbeddedPackageIndexResult>> | null>(null);
+  const [zipVerificationReceiptJson, setZipVerificationReceiptJson] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -221,14 +223,27 @@ const recordJson = record ? buildRecordJson(record) : '';
 
     setErrorMsg(null);
     
-    setZipVerifyResult(null);setZipVerifyStatus('checking');
+    setZipVerifyResult(null);
+      setZipVerificationReceiptJson(null);
+      setZipVerifyStatus('checking');
     setZipVerifyMsg(`Checking embedded package index in ${file.name}...`);
 
     try {
       const buffer = await file.arrayBuffer();
-      const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(new Uint8Array(buffer));
-
+      const zipBytes = new Uint8Array(buffer);
+      const result = await verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(zipBytes);
       setZipVerifyResult(result);
+      setZipVerificationReceiptJson(
+        await createEvidenceZipVerificationReceiptJson({
+          result,
+          zip_file: {
+            name: file.name,
+            size_bytes: file.size,
+            bytes: zipBytes,
+          },
+          created_at_utc: new Date().toISOString(),
+        }),
+      );
 
       if (result.ok) {
         setZipVerifyStatus('pass');
@@ -244,48 +259,22 @@ const recordJson = record ? buildRecordJson(record) : '';
   };
 
   
-  const buildZipVerificationReceiptJson = (result: NonNullable<typeof zipVerifyResult>): string => {
-    const evidenceId =
-      'evidence_id' in result && typeof result.evidence_id === 'string'
-        ? result.evidence_id
-        : null;
-
-    const fileCount =
-      'file_count' in result && typeof result.file_count === 'number'
-        ? result.file_count
-        : null;
-
-    return JSON.stringify(
-      {
-        format: 'ARV-ZIP-VERIFICATION-RECEIPT-v1',
-        scope: 'LOCAL_L0',
-        verifier: 'ARV DemoClient',
-        generated_at_utc: new Date().toISOString(),
-        evidence_id: evidenceId,
-        file_count: fileCount,
-        result,
-      },
-      null,
-      2,
-    );
-  };
-
   const handleOpenZipVerificationReceipt = (): void => {
-    if (!zipVerifyResult) {
+    if (!zipVerifyResult || !zipVerificationReceiptJson) {
       setErrorMsg('Verify an evidence ZIP first.');
       return;
     }
 
-    openTextInNewTab(buildZipVerificationReceiptJson(zipVerifyResult));
+    openTextInNewTab(zipVerificationReceiptJson);
   };
 
   const handleDownloadZipVerificationReceipt = (): void => {
-    if (!zipVerifyResult) {
+    if (!zipVerifyResult || !zipVerificationReceiptJson) {
       setErrorMsg('Verify an evidence ZIP first.');
       return;
     }
 
-    const receiptJson = buildZipVerificationReceiptJson(zipVerifyResult);
+    const receiptJson = zipVerificationReceiptJson;
     const evidenceId =
       'evidence_id' in zipVerifyResult && typeof zipVerifyResult.evidence_id === 'string'
         ? zipVerifyResult.evidence_id

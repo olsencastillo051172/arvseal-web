@@ -106,13 +106,16 @@ function main(): void {
   const handleExportPdf = extractFunctionBlock(demoClient, 'handleExportPdf');
   const handleExportZip = extractFunctionBlock(demoClient, 'handleExportZip');
   const handleZipVerifyInput = extractFunctionBlock(demoClient, 'handleZipVerifyInput');
-    const handleOpenZipVerificationReceipt = extractFunctionBlock(demoClient, 'handleOpenZipVerificationReceipt');
+    
+const normalizedHandleZipVerifyInput = handleZipVerifyInput.replace(/\s+/g, '');
+const handleOpenZipVerificationReceipt = extractFunctionBlock(demoClient, 'handleOpenZipVerificationReceipt');
   const handleDownloadZipVerificationReceipt = extractFunctionBlock(demoClient, 'handleDownloadZipVerificationReceipt');
 const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerification');
   const processFile = extractFunctionBlock(demoClient, 'processFile');
 
   test('DemoClient imports the structured embedded ZIP verifier helper', () => {
     assert(demoClient.includes("import { verifyEvidenceZipBytesWithEmbeddedPackageIndexResult } from '@/lib/rva/kernel/zip-package';"));
+    assert(demoClient.includes("from '@/lib/rva/kernel/zip-verification-receipt';"));
   });
 
   test('DemoClient imports the required ARV kernel-backed helpers', () => {
@@ -175,8 +178,15 @@ const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerif
   });
 
   test('Verify Evidence Package ZIP uses the embedded package index verifier', () => {
+    const normalizedHandleZipVerifyInput = handleZipVerifyInput.replace(/\s+/g, '');
+
     assert(handleZipVerifyInput.includes('file.arrayBuffer()'));
-    assert(handleZipVerifyInput.includes('verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(new Uint8Array(buffer))'));
+    assert(handleZipVerifyInput.includes('const zipBytes = new Uint8Array(buffer)'));
+    assert(
+      normalizedHandleZipVerifyInput.includes(
+        'verifyEvidenceZipBytesWithEmbeddedPackageIndexResult(zipBytes)',
+      ),
+    );
     assert(handleZipVerifyInput.includes('result.ok'));
     assert(handleZipVerifyInput.includes('result.reason'));
     assert(handleZipVerifyInput.includes('result.evidence_id'));
@@ -186,8 +196,10 @@ const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerif
     assert(demoClient.includes('Verify Evidence Package ZIP'));
     assert(demoClient.includes('embedded package-index.json'));
   });
-  test('DemoClient exposes ZIP verification receipt JSON actions', () => {
-    assert(demoClient.includes('buildZipVerificationReceiptJson'));
+
+test('DemoClient exposes ZIP verification receipt JSON actions', () => {
+    assert(demoClient.includes('createEvidenceZipVerificationReceiptJson'));
+    assert(handleZipVerifyInput.includes('createEvidenceZipVerificationReceiptJson'));
     assert(demoClient.includes('zipVerifyResult'));
     assert(demoClient.includes('setZipVerifyResult(result)'));
     assert(demoClient.includes('View ZIP Verification Receipt JSON'));
@@ -195,10 +207,10 @@ const handleOpenVerification = extractFunctionBlock(demoClient, 'handleOpenVerif
     assert(demoClient.includes('zip-verification-receipt.json'));
 
     assert(handleOpenZipVerificationReceipt.includes('openTextInNewTab'));
-    assert(handleOpenZipVerificationReceipt.includes('buildZipVerificationReceiptJson'));
+    assert(handleOpenZipVerificationReceipt.includes('zipVerificationReceiptJson'));
 
     assert(handleDownloadZipVerificationReceipt.includes('downloadBlob'));
-    assert(handleDownloadZipVerificationReceipt.includes('buildZipVerificationReceiptJson'));
+    assert(handleDownloadZipVerificationReceipt.includes('zipVerificationReceiptJson'));
     assert(handleDownloadZipVerificationReceipt.includes('zip-verification-receipt.json'));
   });
 
