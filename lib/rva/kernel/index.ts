@@ -21,3 +21,5 @@ export * from './zip-package';
 
 export * from './qr-transfer-payload';
 export * from './runtime-verification-record';
+
+export * from './local-proof-export-manifest';
